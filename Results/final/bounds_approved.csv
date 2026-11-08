@@ -1,0 +1,43 @@
+variable,unit_mimic,unit_eicu,lower,upper,unit,source
+HR,bpm,,1.0,300.0,bpm,author-specified plausibility limit
+RR,insp/min,,1.0,80.0,breaths/min,author-specified plausibility limit
+SBP,mmHg,,20.0,300.0,mmHg,author-specified plausibility limit
+DBP,mmHg,,5.0,250.0,mmHg,author-specified plausibility limit
+MAP,mmHg,,10.0,300.0,mmHg,author-specified plausibility limit
+Temp,°C / °F,,25.0,45.0,degC,author-specified plausibility limit
+O2Sat,%,,50.0,100.0,%,author-specified plausibility limit
+GCS,,,3.0,15.0,score,author-specified plausibility limit
+Albumin,g/dL,g/dL,0.5,7.0,g/dL,author-specified plausibility limit
+AnionGap,mEq/L,,-10.0,60.0,mmol/L,author-specified plausibility limit
+Bicarbonate,mEq/L,mmol/L,2.0,60.0,mmol/L,author-specified plausibility limit
+BUN,mg/dL,mg/dL,1.0,300.0,mg/dL,author-specified plausibility limit
+Calcium,mEq/L / mg/dL,mg/dL,3.0,20.0,mg/dL,author-specified plausibility limit
+Chloride,mEq/L,mmol/L,50.0,160.0,mmol/L,author-specified plausibility limit
+Creatinine,mg/dL,mg/dL,0.1,30.0,mg/dL,author-specified plausibility limit
+Glucose,mg/dL,mg/dL,10.0,2000.0,mg/dL,author-specified plausibility limit
+Sodium,mEq/L,mmol/L,90.0,200.0,mmol/L,author-specified plausibility limit
+Potassium,mEq/L,mmol/L,1.0,12.0,mmol/L,author-specified plausibility limit
+Lactate,mmol/L,mmol/L,0.1,40.0,mmol/L,author-specified plausibility limit
+Hemoglobin,g/dL,g/dL,1.0,25.0,g/dL,author-specified plausibility limit
+Hematocrit,%,%,5.0,75.0,%,author-specified plausibility limit
+Platelets,K/uL,K/mcL,1.0,2000.0,K/uL,author-specified plausibility limit
+WBC,K/uL,K/mcL,0.01,500.0,K/uL,author-specified plausibility limit
+Lymphocytes,%,%,0.0,100.0,%,author-specified plausibility limit
+Neutrophils,%,%,0.0,100.0,%,author-specified plausibility limit
+INR,,ratio,0.5,20.0,ratio,author-specified plausibility limit
+PT,sec,sec,5.0,150.0,sec,author-specified plausibility limit
+PTT,sec,sec,10.0,250.0,sec,author-specified plausibility limit
+ALT,IU/L,Units/L,1.0,20000.0,IU/L,author-specified plausibility limit
+AST,IU/L,Units/L,1.0,30000.0,IU/L,author-specified plausibility limit
+Bilirubin_Total,mg/dL,mg/dL,0.05,80.0,mg/dL,author-specified plausibility limit
+pH,units,,6.5,8.0,units,author-specified plausibility limit
+pO2,mm Hg,mm Hg,10.0,800.0,mmHg,author-specified plausibility limit
+pCO2,mm Hg,mm Hg,5.0,250.0,mmHg,author-specified plausibility limit
+BaseExcess,mEq/L,mEq/L,-40.0,40.0,mmol/L,author-specified plausibility limit
+Magnesium,mg/dL,mg/dL,0.3,10.0,mg/dL,author-specified plausibility limit
+Phosphate,mg/dL,mg/dL,0.2,20.0,mg/dL,author-specified plausibility limit
+LDH,IU/L,Units/L,20.0,50000.0,IU/L,author-specified plausibility limit
+Troponin_T,ng/mL,,0.0,50.0,ng/mL,author-specified plausibility limit
+CRP,mg/L,mg/dL,0.0,500.0,mg/L,author-specified plausibility limit
+Height,,cm,100.0,230.0,cm,author-specified plausibility limit
+Weight,,kg,25.0,300.0,kg,author-specified plausibility limit

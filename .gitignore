@@ -1,0 +1,17 @@
+*.csv
+!Results/final/bounds_approved.csv
+*.csv.gz
+*.npz
+*.npy
+*.db
+*.pt
+*.pkl
+*.json
+*.log
+__pycache__/
+.DS_Store
+Results/*
+!Results/final/
+Results/final/*
+!Results/final/bounds_approved.csv
+Scripts/models/datasets_real/
