@@ -25,6 +25,7 @@ Run from the repository root with `export PYTHONPATH=Scripts:Scripts/models`.
 5. Tuning, per dataset (`metabric`, `mimic`, `eicu`), scenario (`light`, `moderate`, `severe`), and fold (1 to 5):
    `python Scripts/models/optimize_bsvae.py --dataset <d> --scenario <s> --fold <f> --trials 60 --seed 0`, and likewise `optimize_survival_vae.py`, `optimize_gain.py`, `optimize_miwae.py`, `optimize_mc_dropout_cox.py`, `optimize_deephit.py`, and `optimize_baselines.py --method mice` or `--method missforest`. MC Dropout Cox and DeepHit require the MICE selections.
 6. Final evaluation: `python Scripts/models/aggregate_bsvae_5fold.py --dataset <d> --scenario <s>`, and likewise the other `aggregate_*_5fold.py` scripts (`aggregate_baselines_5fold.py` takes `--method`).
+   Selection sensitivity analysis: `python Scripts/models/aggregate_bsvae_5fold.py --dataset <d> --scenario <s> --selection rmse_cindex` (reselects from the existing B-SVAE studies on RMSE and C-index only).
 7. Synthetic study: `python Scripts/generate_synthetic_cohort.py`, `python Scripts/models/generate_real_splits.py`, tuning with `optimize_bsvae.py --dataset synthetic --scenario moderate --fold 1`, `aggregate_bsvae_5fold.py --dataset synthetic --scenario moderate --folds 1`, then `python Scripts/models/synthetic_validation.py --subsample` and `--analyze`.
 8. Tables: `python Scripts/models/make_results_tables.py`
 9. Tests: `python -m pytest Scripts/models`
