@@ -188,6 +188,106 @@ def select(study, plugin):
     else:
         return study.best_trial
 
+def reselect(source_name, target_name, dataset, scenario, fold, objective_indices, directions):
+    study_name = f"{source_name}_{dataset}_{scenario}_fold{fold}_v2"
+    runs_dir = get_runs_dir()
+    optuna_dir = os.path.join(runs_dir, "optuna")
+    storage_url = f"sqlite:///{os.path.join(optuna_dir, study_name + '.db')}"
+    
+    study = optuna.load_study(study_name=study_name, storage=storage_url)
+    
+    completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if not completed_trials:
+        raise ValueError(f"No complete trials found in study {study_name}.")
+        
+    filtered_data = []
+    for t in completed_trials:
+        vals = [t.values[i] for i in objective_indices]
+        filtered_data.append((t, vals))
+        
+    front_tuples = []
+    for t, vals in filtered_data:
+        dominated = False
+        for other_t, other_vals in filtered_data:
+            if other_t.number == t.number:
+                continue
+            at_least_as_good = True
+            strictly_better = False
+            for v_other, v_curr, d in zip(other_vals, vals, directions):
+                if d == 'minimize':
+                    if v_other > v_curr:
+                        at_least_as_good = False
+                        break
+                    elif v_other < v_curr:
+                        strictly_better = True
+                elif d == 'maximize':
+                    if v_other < v_curr:
+                        at_least_as_good = False
+                        break
+                    elif v_other > v_curr:
+                        strictly_better = True
+                else:
+                    raise ValueError(f"Unknown direction {d}")
+            if at_least_as_good and strictly_better:
+                dominated = True
+                break
+        if not dominated:
+            front_tuples.append((t, vals))
+            
+    # Sort front tuples by trial number for deterministic tie-breaking
+    front_tuples.sort(key=lambda x: x[0].number)
+    
+    if len(front_tuples) == 1:
+        selected_trial, selected_vals = front_tuples[0]
+    else:
+        objs = np.array([vals for _, vals in front_tuples])
+        normed = np.zeros_like(objs)
+        for i, d in enumerate(directions):
+            min_val = np.min(objs[:, i])
+            max_val = np.max(objs[:, i])
+            if max_val > min_val:
+                normed[:, i] = (objs[:, i] - min_val) / (max_val - min_val)
+            if d == 'maximize':
+                normed[:, i] = 1.0 - normed[:, i]
+                
+        dists = np.sqrt(np.sum(normed**2, axis=1))
+        min_dist = np.min(dists)
+        # On ties take lowest trial number
+        tie_indices = [idx for idx, d in enumerate(dists) if np.isclose(d, min_dist)]
+        best_idx = min(tie_indices, key=lambda idx: front_tuples[idx][0].number)
+        selected_trial, selected_vals = front_tuples[best_idx]
+        
+    source_dir = os.path.join(runs_dir, source_name)
+    source_json_path = os.path.join(source_dir, f"{dataset}_{scenario}_fold{fold}_selected.json")
+    if not os.path.exists(source_json_path):
+        raise FileNotFoundError(f"Missing {source_json_path} to read seed.")
+    with open(source_json_path, 'r') as f:
+        source_json = json.load(f)
+    seed = source_json['seed']
+    
+    front_dicts = [
+        {'number': t.number, 'params': t.params, 'values': vals}
+        for t, vals in front_tuples
+    ]
+    
+    out_json = {
+        'seed': seed,
+        'params': selected_trial.params,
+        'validation_objectives': selected_vals,
+        'selected_trial': selected_trial.number,
+        'source_study': study_name,
+        'objective_indices': objective_indices,
+        'pareto_front': front_dicts
+    }
+    
+    target_dir = os.path.join(runs_dir, target_name)
+    os.makedirs(target_dir, exist_ok=True)
+    target_json_path = os.path.join(target_dir, f"{dataset}_{scenario}_fold{fold}_selected.json")
+    with open(target_json_path, 'w') as f:
+        json.dump(out_json, f, indent=2)
+        
+    return out_json
+
 def final_evaluate(plugin, dataset, scenario, fold):
     runs_dir = get_runs_dir()
     out_dir = os.path.join(runs_dir, plugin.name)
