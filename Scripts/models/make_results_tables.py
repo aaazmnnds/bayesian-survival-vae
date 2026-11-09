@@ -379,6 +379,108 @@ def main():
 
     print(f"Written {len(tables)} tables to {out_path}")
 
+    # Build difference tables T10 (C-index) and T11 (RMSE)
+    def fmt_math(val, decimals=3):
+        s = f"{val:.{decimals}f}"
+        if s.startswith("-"):
+            return f"-{s[1:]}"
+        return s
+
+    def build_difference_table(metric_key, metric_title, label_suffix, method_subset, caption_favors, is_cindex=True):
+        cols = []
+        for d_key, _ in datasets:
+            for s_key in scenarios:
+                cols.append((d_key, s_key))
+
+        lines = [
+            "\\begin{table}[h]",
+            "\\centering",
+            "\\setlength{\\tabcolsep}{1.2pt}",
+            "\\scriptsize",
+            f"\\caption{{{metric_title}. {caption_favors} Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons.}}\\label{{tab:{label_suffix}}}",
+            "\\begin{tabular}{lccccccccc}",
+            "\\toprule",
+            " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
+            "\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}",
+            "Method & Light & Mod. & Sev. & Light & Mod. & Sev. & Light & Mod. & Sev. \\\\",
+            "\\midrule",
+        ]
+
+        excl_zero_count = 0
+        total_count = 0
+
+        for m in method_subset:
+            m_key = m[0]
+            m_lbl = m[1]
+            if m_key == "mc_dropout_cox":
+                m_lbl = "\\begin{tabular}[c]{@{}l@{}}MC Dropout\\\\Cox\\end{tabular}"
+            row_cells = [m_lbl]
+            for d_key, s_key in cols:
+                total_count += 1
+                diffs = []
+                for f in range(1, 6):
+                    b_val = test_folds["bsvae"][d_key][s_key][f].get("metrics", {}).get(metric_key)
+                    m_val = test_folds[m_key][d_key][s_key][f].get("metrics", {}).get(metric_key)
+                    if b_val is not None and m_val is not None:
+                        diffs.append(float(b_val) - float(m_val))
+
+                if len(diffs) == 5:
+                    d_bar = float(np.mean(diffs))
+                    s_d = float(np.std(diffs, ddof=1))
+                    h = 2.7764 * s_d * np.sqrt(1.0 / 5.0 + 0.20 / 0.64)
+                    lo = d_bar - h
+                    hi = d_bar + h
+
+                    excludes_zero = (lo > 0 and hi > 0) or (lo < 0 and hi < 0)
+                    if excludes_zero:
+                        excl_zero_count += 1
+
+                    star = "\\textsuperscript{*}" if excludes_zero else ""
+                    d_str = f"${fmt_math(d_bar)}${star}"
+                    lo_str = f"${fmt_math(lo)}$"
+                    hi_str = f"${fmt_math(hi)}$"
+                    cell_str = f"\\begin{{tabular}}[c]{{@{{}}c@{{}}}}{d_str}\\\\{{[{lo_str},}}\\\\{{{hi_str}]}}\\end{{tabular}}"
+                else:
+                    cell_str = "--"
+
+                row_cells.append(cell_str)
+            lines.append(" & ".join(row_cells) + " \\\\")
+
+        lines.extend([
+            "\\bottomrule",
+            "\\end{tabular}",
+            "\\end{table}",
+        ])
+        return "\n".join(lines), excl_zero_count, total_count
+
+    t10_cindex, t10_excl, t10_tot = build_difference_table(
+        "cindex",
+        "Difference in C-index, B-SVAE minus each method, with 95\\% confidence intervals",
+        "diff_cindex",
+        comp_cindex_methods,
+        "Positive values favor B-SVAE. *: interval excludes 0.",
+        is_cindex=True,
+    )
+
+    t11_rmse, t11_excl, t11_tot = build_difference_table(
+        "rmse_std",
+        "Difference in imputation RMSE, B-SVAE minus each method, with 95\\% confidence intervals",
+        "diff_rmse",
+        comp_rmse_methods,
+        "Negative values favor B-SVAE. *: interval excludes 0.",
+        is_cindex=False,
+    )
+
+    appendix_tables = [t10_cindex, t11_rmse]
+    appendix_out_path = os.path.join(project_root, "sn-article-template/results_tables_appendix.tex")
+    os.makedirs(os.path.dirname(appendix_out_path), exist_ok=True)
+    with open(appendix_out_path, "w", encoding="utf-8") as fp:
+        fp.write("\n\n".join(appendix_tables) + "\n")
+
+    print(f"Written {len(appendix_tables)} tables to {appendix_out_path}")
+    print(f"Table 10 (C-index differences): {t10_excl} of {t10_tot} intervals exclude 0; Table 11 (RMSE differences): {t11_excl} of {t11_tot} intervals exclude 0.")
+
 
 if __name__ == "__main__":
     main()
+
