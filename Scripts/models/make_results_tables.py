@@ -134,6 +134,7 @@ def main():
         decimals=3,
         font_size="\\scriptsize",
         tabcolsep="2pt",
+        notes=None,
     ):
         cols = []
         for d_key, _ in datasets:
@@ -166,7 +167,7 @@ def main():
             "\\toprule",
             " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
             "\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}",
-            "Method & Light & Mod. & Sev. & Light & Mod. & Sev. & Light & Mod. & Sev. \\\\",
+            "Method & Light & Moderate & Severe & Light & Moderate & Severe & Light & Moderate & Severe \\\\",
             "\\midrule",
         ]
 
@@ -200,12 +201,25 @@ def main():
         lines.extend([
             "\\bottomrule",
             "\\end{tabular}",
-            "\\end{table}",
         ])
+        if notes:
+            lines.extend([
+                "\\begin{minipage}{\\linewidth}",
+                "\\footnotesize",
+                "\\vspace{1mm}",
+                notes,
+                "\\end{minipage}",
+            ])
+        lines.append("\\end{table}")
         return "\n".join(lines)
 
     t1_rmse = build_transposed_comparison_table(
-        "rmse_std", "Root Mean Squared Error (RMSE)", "rmse", imputing_methods, bold_criterion="min"
+        "rmse_std",
+        "Root Mean Squared Error (RMSE)",
+        "rmse",
+        imputing_methods,
+        bold_criterion="min",
+        notes="Standardized scale, computed on the artificially masked cells only. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
     )
     t2_cindex = build_transposed_comparison_table(
         "cindex",
@@ -214,6 +228,7 @@ def main():
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
+        notes="Harrell's C-index on the test partition. Bold: highest mean in each column.",
     )
     t3_ibs = build_transposed_comparison_table(
         "ibs",
@@ -222,6 +237,7 @@ def main():
         methods,
         bold_criterion="min",
         tabcolsep="1.4pt",
+        notes="Integrated Brier score with inverse probability of censoring weights; lower is better. Bold: lowest mean in each column.",
     )
     t4_tdauc = build_transposed_comparison_table(
         "td_auc_mean",
@@ -230,6 +246,7 @@ def main():
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
+        notes="Time-dependent AUC, averaged over the evaluation time points (Section~\\ref{sec:evalmetrics}). Bold: highest mean in each column.",
     )
     t5_dcal = build_transposed_comparison_table(
         "dcal_pval",
@@ -240,6 +257,7 @@ def main():
         extra_caption=" Brackets: number of folds with $p < 0.05$.",
         append_lt_005=True,
         font_size="\\scriptsize",
+        notes="$p < 0.05$ indicates miscalibration of the predicted survival distribution.",
     )
 
     t6_lines = [
@@ -265,12 +283,22 @@ def main():
     t6_lines.extend([
         "\\bottomrule",
         "\\end{tabular}",
+        "\\begin{minipage}{\\linewidth}",
+        "\\footnotesize",
+        "\\vspace{1mm}",
+        "PICP and MPIW of the 95\\% predictive intervals on the masked cells; MPIW on the standardized scale.",
+        "\\end{minipage}",
         "\\end{table}",
     ])
     t6_uncertainty = "\n".join(t6_lines)
 
     t7_mae = build_transposed_comparison_table(
-        "mae_std", "Mean Absolute Error (MAE)", "mae", imputing_methods, bold_criterion="min"
+        "mae_std",
+        "Mean Absolute Error (MAE)",
+        "mae",
+        imputing_methods,
+        bold_criterion="min",
+        notes="Standardized scale, computed on the artificially masked cells only. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
     )
 
     iwae_methods = [
@@ -305,7 +333,7 @@ def main():
         "\\toprule",
         " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} & \\\\",
         "\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}",
-        "Method & Light & Mod. & Sev. & Light & Mod. & Sev. & Light & Mod. & Sev. & Total \\\\",
+        "Method & Light & Moderate & Severe & Light & Moderate & Severe & Light & Moderate & Severe & Total \\\\",
         "\\midrule",
         "\\multicolumn{11}{l}{\\textbf{C-index}} \\\\",
     ]
@@ -356,6 +384,11 @@ def main():
     t9_lines.extend([
         "\\bottomrule",
         "\\end{tabular}",
+        "\\begin{minipage}{\\linewidth}",
+        "\\footnotesize",
+        "\\vspace{1mm}",
+        "Ties count as no win.",
+        "\\end{minipage}",
         "\\end{table}",
     ])
     t9_wins = "\n".join(t9_lines)
@@ -402,7 +435,7 @@ def main():
             "\\toprule",
             " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
             "\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}",
-            "Method & Light & Mod. & Sev. & Light & Mod. & Sev. & Light & Mod. & Sev. \\\\",
+            "Method & Light & Moderate & Severe & Light & Moderate & Severe & Light & Moderate & Severe \\\\",
             "\\midrule",
         ]
 
