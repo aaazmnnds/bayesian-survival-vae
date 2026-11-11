@@ -166,7 +166,7 @@ def main():
             "\\centering",
             f"\\setlength{{\\tabcolsep}}{{{tabcolsep}}}",
             "\\scriptsize",
-            f"\\caption{{{metric_name}. Mean (SD) over five test folds.{extra_caption}}}\\label{{tab:res_{label_suffix}}}",
+            f"\\caption{{{metric_name}{extra_caption}}}\\label{{tab:res_{label_suffix}}}",
             "\\begin{tabular}{lccccccccc}",
             "\\toprule",
             " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
@@ -219,7 +219,7 @@ def main():
 
     t1_rmse = build_transposed_comparison_table(
         "rmse_std",
-        "Root Mean Squared Error (RMSE)",
+        "Root mean squared error (RMSE).",
         "rmse",
         imputing_methods,
         bold_criterion="min",
@@ -227,7 +227,7 @@ def main():
     )
     t2_cindex = build_transposed_comparison_table(
         "cindex",
-        "Concordance Index (C-index)",
+        "Concordance index (C-index).",
         "cindex",
         methods,
         bold_criterion="max",
@@ -236,7 +236,7 @@ def main():
     )
     t3_ibs = build_transposed_comparison_table(
         "ibs",
-        "Integrated Brier Score (IBS)",
+        "Integrated Brier score (IBS).",
         "ibs",
         methods,
         bold_criterion="min",
@@ -245,7 +245,7 @@ def main():
     )
     t4_tdauc = build_transposed_comparison_table(
         "td_auc_mean",
-        "Time-Dependent AUC",
+        "Time-dependent AUC.",
         "td_auc",
         methods,
         bold_criterion="max",
@@ -254,11 +254,11 @@ def main():
     )
     t5_dcal = build_transposed_comparison_table(
         "dcal_pval",
-        "D-calibration p-value",
+        "D-calibration $p$-value.",
         "dcal",
         methods,
         bold_criterion=None,
-        extra_caption=" Brackets: number of folds with $p < 0.05$.",
+        extra_caption="",
         append_lt_005=True,
         font_size="\\scriptsize",
         notes="In each cell, the upper value is the mean p-value, the middle value in parentheses is the standard deviation over five test folds, and the lower value in brackets is the number of folds with $p < 0.05$. $p < 0.05$ indicates miscalibration of the predicted survival distribution.",
@@ -268,7 +268,7 @@ def main():
         "\\begin{table}[h]",
         "\\centering",
         "\\scriptsize",
-        "\\caption{B-SVAE Uncertainty Calibration. Mean (SD) over five test folds.}\\label{tab:res_bsvae_uncertainty}",
+        "\\caption{Uncertainty calibration of B-SVAE.}\\label{tab:res_bsvae_uncertainty}",
         "\\begin{tabular}{llccc}",
         "\\toprule",
         "Cohort & Severity & PICP & MPIW & ECE \\\\",
@@ -290,7 +290,7 @@ def main():
         "\\begin{minipage}{\\linewidth}",
         "\\footnotesize",
         "\\vspace{1mm}",
-        "PICP and MPIW of the 95\\% predictive intervals on the masked cells; MPIW on the standardized scale.",
+        "PICP, prediction interval coverage probability, and MPIW, mean prediction interval width, of the 95\\% predictive intervals; ECE, expected calibration error. All metrics were computed on the masked cells; MPIW on the standardized scale. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
         "\\end{minipage}",
         "\\end{table}",
     ])
@@ -298,7 +298,7 @@ def main():
 
     t7_mae = build_transposed_comparison_table(
         "mae_std",
-        "Mean Absolute Error (MAE)",
+        "Mean absolute error (MAE).",
         "mae",
         imputing_methods,
         bold_criterion="min",
@@ -311,7 +311,7 @@ def main():
     ]
     t8_iwae = build_transposed_comparison_table(
         "iwae_mean",
-        "Importance-Weighted Autoencoder Bound (IWAE)",
+        "Importance-weighted autoencoder bound (IWAE).",
         "iwae",
         iwae_methods,
         bold_criterion=None,
@@ -333,7 +333,7 @@ def main():
         "\\centering",
         "\\setlength{\\tabcolsep}{2pt}",
         "\\scriptsize",
-        "\\caption{Fold-wise Wins of B-SVAE. Number of test folds in which B-SVAE was better.}\\label{tab:res_wins}",
+        "\\caption{Fold-wise wins of B-SVAE.}\\label{tab:res_wins}",
         "\\begin{tabular}{lcccccccccc}",
         "\\toprule",
         " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} & \\\\",
@@ -392,7 +392,7 @@ def main():
         "\\begin{minipage}{\\linewidth}",
         "\\footnotesize",
         "\\vspace{1mm}",
-        "Ties count as no win.",
+        "Number of the five test folds in which B-SVAE had a higher C-index or a lower RMSE than each method. Ties count as no win.",
         "\\end{minipage}",
         "\\end{table}",
     ])
@@ -424,7 +424,7 @@ def main():
             return f"-{s[1:]}"
         return s
 
-    def build_difference_table(metric_key, metric_title, label_suffix, method_subset, caption_favors, is_cindex=True, notes=None):
+    def build_difference_table(metric_key, metric_title, label_suffix, method_subset, caption_favors=None, is_cindex=True, notes=None):
         cols = []
         for d_key, _ in datasets:
             for s_key in scenarios:
@@ -435,7 +435,7 @@ def main():
             "\\centering",
             "\\setlength{\\tabcolsep}{1.2pt}",
             "\\scriptsize",
-            f"\\caption{{{metric_title}. {caption_favors} Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons.}}\\label{{tab:{label_suffix}}}",
+            f"\\caption{{{metric_title}.}}\\label{{tab:{label_suffix}}}",
             "\\begin{tabular}{lccccccccc}",
             "\\toprule",
             " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
@@ -507,9 +507,9 @@ def main():
         "Difference in C-index, B-SVAE minus each method, with 95\\% confidence intervals",
         "diff_cindex",
         diff_cindex_methods,
-        "Positive values favor B-SVAE. *: interval excludes 0.",
+        caption_favors=None,
         is_cindex=True,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$), B-SVAE without the calibration regularizer.",
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Positive values favor B-SVAE. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer.",
     )
 
     diff_rmse_methods = comp_rmse_methods + [
@@ -520,9 +520,9 @@ def main():
         "Difference in imputation RMSE, B-SVAE minus each method, with 95\\% confidence intervals",
         "diff_rmse",
         diff_rmse_methods,
-        "Negative values favor B-SVAE. *: interval excludes 0.",
+        caption_favors=None,
         is_cindex=False,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$), B-SVAE without the calibration regularizer.",
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Negative values favor B-SVAE. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer.",
     )
 
     appendix_tables = [t10_cindex, t11_rmse]
