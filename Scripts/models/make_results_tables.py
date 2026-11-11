@@ -219,7 +219,7 @@ def main():
 
     t1_rmse = build_transposed_comparison_table(
         "rmse_std",
-        "Root mean squared error (RMSE).",
+        "Root mean square error (RMSE).",
         "rmse",
         imputing_methods,
         bold_criterion="min",
