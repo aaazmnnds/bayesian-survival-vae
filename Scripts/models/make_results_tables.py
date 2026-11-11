@@ -41,6 +41,10 @@ def main():
         ("miwae", "MIWAE", "Results/final/runs_v2/miwae"),
     ]
 
+    all_methods = methods + [
+        ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal")
+    ]
+
     datasets = [
         ("metabric", "METABRIC"),
         ("mimic", "MIMIC-IV"),
@@ -50,7 +54,7 @@ def main():
     scenarios = ["light", "moderate", "severe"]
 
     missing_paths = []
-    for m_key, _, m_rel in methods:
+    for m_key, _, m_rel in all_methods:
         base_dir = os.path.join(project_root, m_rel)
         for d_key, _ in datasets:
             for s_key in scenarios:
@@ -70,7 +74,7 @@ def main():
     summaries = {}
     test_folds = {}
 
-    for m_key, _, m_rel in methods:
+    for m_key, _, m_rel in all_methods:
         summaries[m_key] = {}
         test_folds[m_key] = {}
         base_dir = os.path.join(project_root, m_rel)
@@ -495,24 +499,30 @@ def main():
         lines.append("\\end{table}")
         return "\n".join(lines), excl_zero_count, total_count
 
+    diff_cindex_methods = comp_cindex_methods + [
+        ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal")
+    ]
     t10_cindex, t10_excl, t10_tot = build_difference_table(
         "cindex",
         "Difference in C-index, B-SVAE minus each method, with 95\\% confidence intervals",
         "diff_cindex",
-        comp_cindex_methods,
+        diff_cindex_methods,
         "Positive values favor B-SVAE. *: interval excludes 0.",
         is_cindex=True,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0.",
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$), B-SVAE without the calibration regularizer.",
     )
 
+    diff_rmse_methods = comp_rmse_methods + [
+        ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal")
+    ]
     t11_rmse, t11_excl, t11_tot = build_difference_table(
         "rmse_std",
         "Difference in imputation RMSE, B-SVAE minus each method, with 95\\% confidence intervals",
         "diff_rmse",
-        comp_rmse_methods,
+        diff_rmse_methods,
         "Negative values favor B-SVAE. *: interval excludes 0.",
         is_cindex=False,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0.",
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$), B-SVAE without the calibration regularizer.",
     )
 
     appendix_tables = [t10_cindex, t11_rmse]
