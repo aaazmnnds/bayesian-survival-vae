@@ -3,6 +3,9 @@ import json
 import os
 import sys
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -152,7 +155,7 @@ def main():
                 m_key = m[0]
                 m_val, _ = get_mean_std_val(m_key, d_key, s_key, metric_key)
                 if m_val is not None:
-                    vals.append(m_val)
+                    vals.append(round(m_val, decimals))
             if vals and bold_criterion is not None:
                 if bold_criterion == "min":
                     best_per_col[(d_key, s_key)] = min(vals)
@@ -184,7 +187,7 @@ def main():
                 is_best = False
                 best_val = best_per_col.get((d_key, s_key))
                 if best_val is not None and m_val is not None:
-                    if abs(m_val - best_val) < 1e-12:
+                    if abs(round(m_val, decimals) - best_val) < 1e-12:
                         is_best = True
 
                 count_lt = None
@@ -268,7 +271,7 @@ def main():
         "\\begin{table}[h]",
         "\\centering",
         "\\scriptsize",
-        "\\caption{Uncertainty calibration of B-SVAE.}\\label{tab:res_bsvae_uncertainty}",
+        "\\caption{Imputation uncertainty calibration of B-SVAE.}\\label{tab:res_bsvae_uncertainty}",
         "\\begin{tabular}{llccc}",
         "\\toprule",
         "Cohort & Severity & PICP & MPIW & ECE \\\\",
@@ -392,7 +395,7 @@ def main():
         "\\begin{minipage}{\\linewidth}",
         "\\footnotesize",
         "\\vspace{1mm}",
-        "Number of the five test folds in which B-SVAE had a higher C-index or a lower RMSE than each method. Ties count as no win.",
+        "Number of the five test folds in which B-SVAE had a higher C-index or a lower RMSE than each method. Ties count as no win. MC Dropout Cox and DeepHit are not listed for RMSE because they used the MICE imputation.",
         "\\end{minipage}",
         "\\end{table}",
     ])
@@ -533,6 +536,125 @@ def main():
 
     print(f"Written {len(appendix_tables)} tables to {appendix_out_path}")
     print(f"Table 10 (C-index differences): {t10_excl} of {t10_tot} intervals exclude 0; Table 11 (RMSE differences): {t11_excl} of {t11_tot} intervals exclude 0.")
+
+    make_dcal_figure(project_root)
+
+
+def make_dcal_figure(project_root=None):
+    if project_root is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    dcal_methods = [
+        ("bsvae", "B-SVAE", "#2a78d6", "o", -0.15),
+        ("bsvae_nolcal", r"B-SVAE ($\lambda = 0$)", "#eb6834", "s", 0.0),
+        ("mnar_svae", "Ablation", "#1baf7a", "^", 0.15),
+    ]
+
+    cohorts = [
+        ("metabric", "METABRIC"),
+        ("mimic", "MIMIC-IV"),
+        ("eicu", "eICU"),
+    ]
+
+    scenarios = ["light", "moderate", "severe"]
+    bins_x = np.arange(1, 11)
+    tick_labels = [f"0.{i}" for i in range(10)]
+
+    plt.rcParams.update({
+        "font.size": 8,
+        "font.family": "sans-serif",
+        "mathtext.fontset": "stix",
+        "axes.labelsize": 8,
+        "axes.titlesize": 8,
+        "xtick.labelsize": 7,
+        "ytick.labelsize": 7,
+        "legend.fontsize": 8,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+    })
+
+    fig, axes = plt.subplots(1, 3, figsize=(5.5, 2.2), sharey=False)
+    fig.subplots_adjust(top=0.79, bottom=0.25, left=0.10, right=0.98, wspace=0.28)
+
+    for ax_idx, (cohort_key, cohort_name) in enumerate(cohorts):
+        ax = axes[ax_idx]
+        ax.set_title(cohort_name, fontsize=8, pad=5)
+        ax.axhline(0.0, color="#888888", linestyle="-", linewidth=0.8, alpha=0.7)
+
+        for m_key, m_label, color, marker, offset in dcal_methods:
+            dev_list = []
+            for sc in scenarios:
+                for f in range(1, 6):
+                    npz_path = os.path.join(
+                        project_root,
+                        "Results",
+                        "final",
+                        "runs_v2",
+                        m_key,
+                        f"{cohort_key}_{sc}_fold{f}_test.npz",
+                    )
+                    if os.path.exists(npz_path):
+                        with np.load(npz_path) as data:
+                            b = data["dcal_bins"].astype(float)
+                            s = b.sum()
+                            if s > 0:
+                                shares = b / s
+                                dev = (shares - 0.10) * 100.0
+                                dev_list.append(dev)
+                            else:
+                                dev_list.append(np.zeros_like(b))
+
+            if dev_list:
+                dev_arr = np.array(dev_list)
+                mean_dev = np.mean(dev_arr, axis=0)
+                std_dev = np.std(dev_arr, axis=0)
+                ax.errorbar(
+                    bins_x + offset,
+                    mean_dev,
+                    yerr=std_dev,
+                    color=color,
+                    marker=marker,
+                    linestyle="none",
+                    elinewidth=0.6,
+                    capsize=0,
+                    markersize=3.2,
+                    alpha=0.9,
+                    label=m_label,
+                )
+
+        ax.set_xlim(0.3, 10.7)
+        ax.set_xticks(bins_x)
+        ax.set_xticklabels(tick_labels, fontsize=6.5, rotation=35, ha="right")
+
+        if ax_idx == 0:
+            ax.set_ylabel("Deviation from expected share (pp)", fontsize=8)
+
+        ax.grid(True, axis="y", color="#e8e8e8", linestyle="-", linewidth=0.6, alpha=0.8)
+        ax.grid(False, axis="x")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    fig.supxlabel("Predicted survival at event time (bin)", fontsize=8, y=0.03)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.99),
+        ncol=3,
+        frameon=False,
+        fontsize=8,
+        columnspacing=1.6,
+        handletextpad=0.4,
+    )
+
+    out_path = os.path.join(project_root, "sn-article-template", "fig_dcal_bins.pdf")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    fig.savefig(out_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved D-calibration figure to {out_path}")
 
 
 if __name__ == "__main__":
