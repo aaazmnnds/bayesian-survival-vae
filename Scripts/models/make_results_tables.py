@@ -142,6 +142,7 @@ def main():
         font_size="\\scriptsize",
         tabcolsep="2pt",
         notes=None,
+        placement="[h]",
     ):
         cols = []
         for d_key, _ in datasets:
@@ -165,7 +166,7 @@ def main():
                 best_per_col[(d_key, s_key)] = None
 
         lines = [
-            "\\begin{table}[h]",
+            f"\\begin{{table}}{placement}",
             "\\centering",
             f"\\setlength{{\\tabcolsep}}{{{tabcolsep}}}",
             "\\scriptsize",
@@ -306,6 +307,7 @@ def main():
         imputing_methods,
         bold_criterion="min",
         notes="Standardized scale, computed on the artificially masked cells only. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
+        placement="[!htbp]",
     )
 
     iwae_methods = [
@@ -321,6 +323,7 @@ def main():
         extra_caption=" Values are not comparable across models with different observation likelihoods.",
         decimals=1,
         notes="In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
+        placement="[!htbp]",
     )
 
     comp_cindex_methods = [m for m in methods if m[0] != "bsvae"]
@@ -332,7 +335,7 @@ def main():
             cols.append((d_key, s_key))
 
     t9_lines = [
-        "\\begin{table}[h]",
+        "\\begin{table}[!htbp]",
         "\\centering",
         "\\setlength{\\tabcolsep}{2pt}",
         "\\scriptsize",
@@ -408,9 +411,6 @@ def main():
         t4_tdauc,
         t5_dcal,
         t6_uncertainty,
-        t7_mae,
-        t8_iwae,
-        t9_wins,
     ]
 
     out_path = os.path.join(project_root, args.output)
@@ -434,12 +434,12 @@ def main():
                 cols.append((d_key, s_key))
 
         lines = [
-            "\\begin{table}[h]",
+            "\\begin{table}[!htbp]",
             "\\centering",
             "\\setlength{\\tabcolsep}{1.2pt}",
             "\\scriptsize",
             f"\\caption{{{metric_title}.}}\\label{{tab:{label_suffix}}}",
-            "\\begin{tabular}{lccccccccc}",
+            "\\begin{tabular}{@{}lccccccccc@{}}",
             "\\toprule",
             " & \\multicolumn{3}{c}{METABRIC} & \\multicolumn{3}{c}{MIMIC-IV} & \\multicolumn{3}{c}{eICU} \\\\",
             "\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}",
@@ -455,6 +455,8 @@ def main():
             m_lbl = m[1]
             if m_key == "mc_dropout_cox":
                 m_lbl = "\\begin{tabular}[c]{@{}l@{}}MC Dropout\\\\Cox\\end{tabular}"
+            elif m_key == "bsvae_nolcal":
+                m_lbl = "\\begin{tabular}[c]{@{}l@{}}B-SVAE\\\\($\\lambda = 0$)\\end{tabular}"
             row_cells = [m_lbl]
             for d_key, s_key in cols:
                 total_count += 1
@@ -528,7 +530,12 @@ def main():
         notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Negative values favor B-SVAE. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer.",
     )
 
-    appendix_tables = [t10_cindex, t11_rmse]
+    t9_t10_combined = (
+        t9_wins[: t9_wins.rfind("\\end{table}")].rstrip()
+        + "\n\n\\vspace{3mm}\n\n"
+        + t10_cindex[t10_cindex.find("\n") + 1 :]
+    )
+    appendix_tables = [t7_mae, t8_iwae, t9_t10_combined, t11_rmse]
     appendix_out_path = os.path.join(project_root, "sn-article-template/results_tables_appendix.tex")
     os.makedirs(os.path.dirname(appendix_out_path), exist_ok=True)
     with open(appendix_out_path, "w", encoding="utf-8") as fp:
