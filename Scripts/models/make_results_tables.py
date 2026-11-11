@@ -219,7 +219,7 @@ def main():
         "rmse",
         imputing_methods,
         bold_criterion="min",
-        notes="Standardized scale, computed on the artificially masked cells only. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
+        notes="Standardized scale, computed on the artificially masked cells only. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
     )
     t2_cindex = build_transposed_comparison_table(
         "cindex",
@@ -228,7 +228,7 @@ def main():
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
-        notes="Harrell's C-index on the test partition. Bold: highest mean in each column.",
+        notes="Harrell's C-index on the test partition. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column.",
     )
     t3_ibs = build_transposed_comparison_table(
         "ibs",
@@ -237,7 +237,7 @@ def main():
         methods,
         bold_criterion="min",
         tabcolsep="1.4pt",
-        notes="Integrated Brier score with inverse probability of censoring weights; lower is better. Bold: lowest mean in each column.",
+        notes="Integrated Brier score with inverse probability of censoring weights; lower is better. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: lowest mean in each column.",
     )
     t4_tdauc = build_transposed_comparison_table(
         "td_auc_mean",
@@ -246,7 +246,7 @@ def main():
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
-        notes="Time-dependent AUC, averaged over the evaluation time points (Section~\\ref{sec:evalmetrics}). Bold: highest mean in each column.",
+        notes="Time-dependent AUC, averaged over the evaluation time points (Section~\\ref{sec:evalmetrics}). In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column.",
     )
     t5_dcal = build_transposed_comparison_table(
         "dcal_pval",
@@ -257,7 +257,7 @@ def main():
         extra_caption=" Brackets: number of folds with $p < 0.05$.",
         append_lt_005=True,
         font_size="\\scriptsize",
-        notes="$p < 0.05$ indicates miscalibration of the predicted survival distribution.",
+        notes="In each cell, the upper value is the mean p-value, the middle value in parentheses is the standard deviation over five test folds, and the lower value in brackets is the number of folds with $p < 0.05$. $p < 0.05$ indicates miscalibration of the predicted survival distribution.",
     )
 
     t6_lines = [
@@ -298,7 +298,7 @@ def main():
         "mae",
         imputing_methods,
         bold_criterion="min",
-        notes="Standardized scale, computed on the artificially masked cells only. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
+        notes="Standardized scale, computed on the artificially masked cells only. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: lowest mean in each column. MC Dropout Cox and DeepHit are not listed because they used the MICE imputation.",
     )
 
     iwae_methods = [
@@ -313,6 +313,7 @@ def main():
         bold_criterion=None,
         extra_caption=" Values are not comparable across models with different observation likelihoods.",
         decimals=1,
+        notes="In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
     )
 
     comp_cindex_methods = [m for m in methods if m[0] != "bsvae"]
@@ -419,7 +420,7 @@ def main():
             return f"-{s[1:]}"
         return s
 
-    def build_difference_table(metric_key, metric_title, label_suffix, method_subset, caption_favors, is_cindex=True):
+    def build_difference_table(metric_key, metric_title, label_suffix, method_subset, caption_favors, is_cindex=True, notes=None):
         cols = []
         for d_key, _ in datasets:
             for s_key in scenarios:
@@ -482,8 +483,16 @@ def main():
         lines.extend([
             "\\bottomrule",
             "\\end{tabular}",
-            "\\end{table}",
         ])
+        if notes:
+            lines.extend([
+                "\\begin{minipage}{\\linewidth}",
+                "\\footnotesize",
+                "\\vspace{1mm}",
+                notes,
+                "\\end{minipage}",
+            ])
+        lines.append("\\end{table}")
         return "\n".join(lines), excl_zero_count, total_count
 
     t10_cindex, t10_excl, t10_tot = build_difference_table(
@@ -493,6 +502,7 @@ def main():
         comp_cindex_methods,
         "Positive values favor B-SVAE. *: interval excludes 0.",
         is_cindex=True,
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0.",
     )
 
     t11_rmse, t11_excl, t11_tot = build_difference_table(
@@ -502,6 +512,7 @@ def main():
         comp_rmse_methods,
         "Negative values favor B-SVAE. *: interval excludes 0.",
         is_cindex=False,
+        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0.",
     )
 
     appendix_tables = [t10_cindex, t11_rmse]

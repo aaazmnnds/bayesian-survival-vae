@@ -288,7 +288,15 @@ def reselect(source_name, target_name, dataset, scenario, fold, objective_indice
         
     return out_json
 
-def final_evaluate(plugin, dataset, scenario, fold):
+def _cuda_sync():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+    except (ImportError, Exception):
+        pass
+
+def final_evaluate(plugin, dataset, scenario, fold, timing=False):
     runs_dir = get_runs_dir()
     out_dir = os.path.join(runs_dir, plugin.name)
     
@@ -308,17 +316,39 @@ def final_evaluate(plugin, dataset, scenario, fold):
     train_part = fd_train.part('train')
     val_part = fd_train.part('val')
     
-    state = plugin.fit(train_part, val_part, params, seed)
+    if timing:
+        _cuda_sync()
+        t_fit_0 = time.perf_counter()
+        state = plugin.fit(train_part, val_part, params, seed)
+        _cuda_sync()
+        fit_seconds = time.perf_counter() - t_fit_0
+    else:
+        state = plugin.fit(train_part, val_part, params, seed)
     
     fd_test = load_test(dataset, scenario, fold, fd_train)
     test_part = fd_test.part('test')
     
-    pred_test = plugin.predict(state, test_part, n_passes=100)
+    if timing:
+        _cuda_sync()
+        t_infer_0 = time.perf_counter()
+        pred_test = plugin.predict(state, test_part, n_passes=100)
+        _cuda_sync()
+        inference_seconds = time.perf_counter() - t_infer_0
+    else:
+        pred_test = plugin.predict(state, test_part, n_passes=100)
     
     has_own_surv = hasattr(plugin, 'survival_curves') and hasattr(plugin, 'survival_at_own_times')
     if not has_own_surv:
+        if timing:
+            _cuda_sync()
+            t_base_0 = time.perf_counter()
+
         pred_train = plugin.predict(state, train_part, n_passes=100)
         baseline = breslow_baseline(pred_train['eta'], train_part['T'], train_part['E'])
+
+        if timing:
+            _cuda_sync()
+            fit_seconds += (time.perf_counter() - t_base_0)
     
     M_inj = test_part['M_inj']
     x_true = test_part['X_true']
@@ -356,13 +386,25 @@ def final_evaluate(plugin, dataset, scenario, fold):
     }
     
     if has_own_surv:
-        surv_dict = plugin.survival_curves(state, test_part, times, n_passes=100)
+        if timing:
+            _cuda_sync()
+            t_surv_0 = time.perf_counter()
+            surv_dict = plugin.survival_curves(state, test_part, times, n_passes=100)
+            S_at_T = plugin.survival_at_own_times(state, test_part, n_passes=100)
+            _cuda_sync()
+            inference_seconds += (time.perf_counter() - t_surv_0)
+        else:
+            surv_dict = plugin.survival_curves(state, test_part, times, n_passes=100)
+            S_at_T = plugin.survival_at_own_times(state, test_part, n_passes=100)
         S_matrix = surv_dict['S']
         if 'S_samples' in surv_dict:
             save_dict['S_lower'] = np.percentile(surv_dict['S_samples'], 2.5, axis=0)
             save_dict['S_upper'] = np.percentile(surv_dict['S_samples'], 97.5, axis=0)
-        S_at_T = plugin.survival_at_own_times(state, test_part, n_passes=100)
     elif 'eta_samples' in pred_test:
+        if timing:
+            _cuda_sync()
+            t_surv_0 = time.perf_counter()
+
         n_passes = pred_test['eta_samples'].shape[1]
         S_passes = []
         S_at_T_passes = []
@@ -378,9 +420,21 @@ def final_evaluate(plugin, dataset, scenario, fold):
         
         save_dict['S_lower'] = np.percentile(S_passes, 2.5, axis=0)
         save_dict['S_upper'] = np.percentile(S_passes, 97.5, axis=0)
+
+        if timing:
+            _cuda_sync()
+            inference_seconds += (time.perf_counter() - t_surv_0)
     else:
+        if timing:
+            _cuda_sync()
+            t_surv_0 = time.perf_counter()
+
         S_matrix = survival_matrix(baseline, eta_test, times)
         S_at_T = survival_at_event_times(baseline, eta_test, T_test)
+
+        if timing:
+            _cuda_sync()
+            inference_seconds += (time.perf_counter() - t_surv_0)
         
     metrics['ibs'] = ibs(T_train, E_train, T_test, E_test, S_matrix, times)
     
@@ -401,6 +455,30 @@ def final_evaluate(plugin, dataset, scenario, fold):
     if 'eta_samples' in pred_test: save_dict['eta_samples'] = pred_test['eta_samples']
     if 'sigma_E2' in pred_test: save_dict['sigma_E2'] = pred_test['sigma_E2']
     if 'sigma_A2' in pred_test: save_dict['sigma_A2'] = pred_test['sigma_A2']
+    
+    if timing:
+        import socket
+        if hasattr(plugin, 'device'):
+            dev_str = str(plugin.device)
+            device_name = "cuda" if "cuda" in dev_str else "cpu"
+        else:
+            device_name = "cpu"
+            
+        timing_json = {
+            'fit_seconds': fit_seconds,
+            'inference_seconds': inference_seconds,
+            'n_train': len(T_train),
+            'n_test': len(T_test),
+            'hostname': socket.gethostname(),
+            'device': device_name,
+            'metrics': metrics
+        }
+        
+        timing_path = os.path.join(out_dir, f"timing_{plugin.name}_{dataset}_{scenario}_fold{fold}.json")
+        with open(timing_path, 'w') as f:
+            json.dump(timing_json, f, indent=2)
+            
+        return timing_json
     
     t1 = time.time()
     
@@ -450,3 +528,4 @@ def summarize(plugin_name, dataset, scenario):
     summary_path = os.path.join(out_dir, f"{dataset}_{scenario}_summary.json")
     with open(summary_path, 'w') as f:
         json.dump(summary, f, indent=2)
+

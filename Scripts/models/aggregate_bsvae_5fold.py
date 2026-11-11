@@ -10,10 +10,13 @@ if __name__ == '__main__':
     parser.add_argument('--scenario', type=str, required=True)
     parser.add_argument('--folds', type=str, default="1,2,3,4,5", help="Comma-separated list of folds to evaluate")
     parser.add_argument('--selection', type=str, choices=['default', 'rmse_cindex', 'check3'], default='default', help="Model selection criterion")
+    parser.add_argument('--variant', type=str, choices=['none', 'nolcal'], default='none')
+    parser.add_argument('--timing', action='store_true', default=False, help="Measure fit and inference timing")
     args = parser.parse_args()
 
     folds = [int(f.strip()) for f in args.folds.split(',') if f.strip()]
-    plugin = BSVAEPlugin()
+    variant = None if args.variant == 'none' else args.variant
+    plugin = BSVAEPlugin(variant=variant)
 
     if args.selection == 'check3':
         runs_dir = harness_runner.get_runs_dir()
@@ -51,14 +54,14 @@ if __name__ == '__main__':
                 objective_indices=[0, 2],
                 directions=["minimize", "maximize"]
             )
-            harness_runner.final_evaluate(plugin, args.dataset, args.scenario, fold)
+            harness_runner.final_evaluate(plugin, args.dataset, args.scenario, fold, timing=args.timing)
 
-        if set(folds) >= {1, 2, 3, 4, 5}:
+        if not args.timing and set(folds) >= {1, 2, 3, 4, 5}:
             harness_runner.summarize(plugin.name, args.dataset, args.scenario)
 
     else:
         for fold in folds:
-            harness_runner.final_evaluate(plugin, args.dataset, args.scenario, fold)
+            harness_runner.final_evaluate(plugin, args.dataset, args.scenario, fold, timing=args.timing)
 
-        if set(folds) >= {1, 2, 3, 4, 5}:
+        if not args.timing and set(folds) >= {1, 2, 3, 4, 5}:
             harness_runner.summarize(plugin.name, args.dataset, args.scenario)

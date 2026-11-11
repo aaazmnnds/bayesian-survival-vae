@@ -12,8 +12,9 @@ from train_utils import on_epoch_start, compute_L_cal
 import harness_runner
 
 class BSVAEPlugin:
-    def __init__(self, stage_epochs=(30, 20, 50), batch_size=256, train_mc_passes=10, val_mc_passes=20, device=None):
-        self.name = 'bsvae'
+    def __init__(self, stage_epochs=(30, 20, 50), batch_size=256, train_mc_passes=10, val_mc_passes=20, device=None, variant=None):
+        self.variant = variant
+        self.name = 'bsvae_nolcal' if variant == 'nolcal' else 'bsvae'
         self.directions = ['minimize', 'minimize', 'maximize']
         self.pareto = True
         self.stage_epochs = stage_epochs
@@ -23,17 +24,23 @@ class BSVAEPlugin:
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def search_space(self, trial):
-        return {
+        space = {
             'beta': trial.suggest_float('beta', 1e-4, 10, log=True),
             'gamma': trial.suggest_float('gamma', 1e-2, 10, log=True),
-            'lambda': trial.suggest_float('lambda', 1e-2, 1e2, log=True),
             'latent_dim': trial.suggest_categorical('latent_dim', [8, 16, 32, 64]),
             'learning_rate': trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True),
             'dropout_prob': trial.suggest_float('dropout_prob', 0.05, 0.5),
             'hidden': trial.suggest_categorical("hidden", ["64_32", "128_64", "128_64_32"])
         }
+        if self.variant == 'nolcal':
+            space['lambda'] = 0.0
+        else:
+            space['lambda'] = trial.suggest_float('lambda', 1e-2, 1e2, log=True)
+        return space
 
     def fit(self, train, val, params, seed):
+        if self.variant == "nolcal":
+            params = {**params, 'lambda': 0.0}
         feature_names = train['feature_names']
         feature_types = train['feature_types']
         
@@ -156,8 +163,11 @@ class BSVAEPlugin:
         for param in model.parameters(): param.requires_grad = True
         
         for ep in range(self.stage_epochs[2]):
-            eval_times = torch.linspace(T.min(), T.max(), steps=10, device=self.device)
-            epoch_cache = on_epoch_start(model, x_filled, m, T, E, eval_times)
+            if params['lambda'] > 0:
+                eval_times = torch.linspace(T.min(), T.max(), steps=10, device=self.device)
+                epoch_cache = on_epoch_start(model, x_filled, m, T, E, eval_times)
+            else:
+                epoch_cache = None
             
             model.train()
             indices = torch.randperm(N, generator=gen, device=self.device)
@@ -172,12 +182,15 @@ class BSVAEPlugin:
                     out['eta'], T[batch_idx], E[batch_idx], cont_idx, bin_idx, cat_groups
                 )
                 
-                L_cal = compute_L_cal(
-                    model, x_filled[batch_idx], m[batch_idx], epoch_cache['bin_assignments'][batch_idx],
-                    epoch_cache['S_b_KM'], epoch_cache['H_0'], eval_times, n_passes=self.train_mc_passes
-                )
-                
-                loss = L_NLL + params['beta'] * L_latent + params['gamma'] * L_Cox + params['lambda'] * L_cal
+                if params['lambda'] > 0:
+                    L_cal = compute_L_cal(
+                        model, x_filled[batch_idx], m[batch_idx], epoch_cache['bin_assignments'][batch_idx],
+                        epoch_cache['S_b_KM'], epoch_cache['H_0'], eval_times, n_passes=self.train_mc_passes
+                    )
+                    loss = L_NLL + params['beta'] * L_latent + params['gamma'] * L_Cox + params['lambda'] * L_cal
+                else:
+                    L_cal = None
+                    loss = L_NLL + params['beta'] * L_latent + params['gamma'] * L_Cox
                 
                 if not torch.isfinite(loss):
                     max_eta = out['eta'].abs().max().item()
@@ -185,7 +198,7 @@ class BSVAEPlugin:
                     if not torch.isfinite(L_NLL): comps.append('L_NLL')
                     if not torch.isfinite(L_latent): comps.append('L_latent')
                     if not torch.isfinite(L_Cox): comps.append('L_Cox')
-                    if not torch.isfinite(L_cal): comps.append('L_cal')
+                    if L_cal is not None and not torch.isfinite(L_cal): comps.append('L_cal')
                     raise ValueError(f"Loss is {loss.item()} in stage 3, epoch {ep}. Not finite: {', '.join(comps)}. max |eta|: {max_eta}")
                     
                 optimizer.zero_grad()
@@ -328,9 +341,11 @@ if __name__ == '__main__':
     parser.add_argument('--fold', type=str, required=True)
     parser.add_argument('--trials', type=int, required=True)
     parser.add_argument('--seed', type=int, required=True)
+    parser.add_argument('--variant', type=str, choices=['none', 'nolcal'], default='none')
     args = parser.parse_args()
     
-    plugin = BSVAEPlugin()
+    variant = None if args.variant == 'none' else args.variant
+    plugin = BSVAEPlugin(variant=variant)
     
     if args.fold == 'all':
         folds = [1, 2, 3, 4, 5]

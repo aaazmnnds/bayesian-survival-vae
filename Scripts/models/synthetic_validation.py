@@ -14,17 +14,20 @@ import harness_metrics
 from optimize_bsvae import BSVAEPlugin
 
 
-def run_subsample():
+def run_subsample(variant=None):
     dataset = "synthetic"
     scenario = "moderate"
     fold = 1
+
+    method_name = "bsvae_nolcal" if variant == "nolcal" else "bsvae"
+    prefix = "nolcal_" if variant == "nolcal" else ""
 
     selected_json_path = os.path.join(
         PROJECT_ROOT,
         "Results",
         "final",
         "runs_v2",
-        "bsvae",
+        method_name,
         f"{dataset}_{scenario}_fold{fold}_selected.json",
     )
     if not os.path.exists(selected_json_path):
@@ -49,7 +52,7 @@ def run_subsample():
 
     for size in sizes:
         for r in range(5):
-            out_npz_path = os.path.join(output_dir, f"subsample_n{size}_r{r}.npz")
+            out_npz_path = os.path.join(output_dir, f"{prefix}subsample_n{size}_r{r}.npz")
             if os.path.exists(out_npz_path):
                 print(f"Skipping existing run: {out_npz_path}")
                 continue
@@ -70,7 +73,7 @@ def run_subsample():
                 else:
                     train_part_sub[k] = v
 
-            plugin = BSVAEPlugin()
+            plugin = BSVAEPlugin(variant=variant)
             state = plugin.fit(train_part_sub, val_part, params, seed=r)
 
             pred_test = plugin.predict(state, test_part, n_passes=100)
@@ -87,10 +90,14 @@ def run_subsample():
             print(f"Completed subsample run: size={size}, r={r} -> {out_npz_path}")
 
 
-def run_analyze():
+def run_analyze(variant=None):
     dataset = "synthetic"
     scenario = "moderate"
     fold = 1
+
+    method_name = "bsvae_nolcal" if variant == "nolcal" else "bsvae"
+    prefix = "nolcal_" if variant == "nolcal" else ""
+    summary_filename = "synthetic_validation_summary_nolcal.json" if variant == "nolcal" else "synthetic_validation_summary.json"
 
     synth_dir = os.path.join(PROJECT_ROOT, "Results", "synthetic")
     test_npz_path = os.path.join(
@@ -98,7 +105,7 @@ def run_analyze():
         "Results",
         "final",
         "runs_v2",
-        "bsvae",
+        method_name,
         f"{dataset}_{scenario}_fold{fold}_test.npz",
     )
     if not os.path.exists(test_npz_path):
@@ -149,7 +156,7 @@ def run_analyze():
         e_runs = []
         a_runs = []
         for r in range(5):
-            sub_npz_path = os.path.join(synth_dir, f"subsample_n{size}_r{r}.npz")
+            sub_npz_path = os.path.join(synth_dir, f"{prefix}subsample_n{size}_r{r}.npz")
             if not os.path.exists(sub_npz_path):
                 raise FileNotFoundError(f"Missing subsample file: {sub_npz_path}")
             sub_npz = np.load(sub_npz_path)
@@ -274,7 +281,7 @@ def run_analyze():
         },
     }
 
-    summary_path = os.path.join(synth_dir, "synthetic_validation_summary.json")
+    summary_path = os.path.join(synth_dir, summary_filename)
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
@@ -305,12 +312,17 @@ def main():
     group.add_argument(
         "--analyze", action="store_true", help="Analyze results and produce summary."
     )
+    parser.add_argument(
+        "--variant", type=str, choices=["none", "nolcal"], default="none", help="Model variant."
+    )
     args = parser.parse_args()
 
+    variant = None if args.variant == "none" else args.variant
+
     if args.subsample:
-        run_subsample()
+        run_subsample(variant=variant)
     elif args.analyze:
-        run_analyze()
+        run_analyze(variant=variant)
 
 
 if __name__ == "__main__":
