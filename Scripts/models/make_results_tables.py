@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import os
 import sys
@@ -662,6 +663,72 @@ def make_dcal_figure(project_root=None):
     fig.savefig(out_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
     print(f"Saved D-calibration figure to {out_path}")
+
+    export_selected_hyperparameters(project_root)
+
+
+def export_selected_hyperparameters(project_root=None):
+    if project_root is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    method_configs = [
+        ("bsvae", "B-SVAE", "Results/final/runs_v2/bsvae"),
+        ("mnar_svae", "MNAR-SVAE ablation", "Results/final/runs_v2/mnar_svae"),
+        ("mice", "MICE + Cox", "Results/final/runs_v2/mice"),
+        ("miwae", "MIWAE + Cox", "Results/final/runs_v2/miwae"),
+        ("bsvae_nolcal", "B-SVAE (lambda = 0)", "Results/final/runs_v2/bsvae_nolcal"),
+        ("missforest", "missForest + Cox", "Results/final/runs_v2_tesla/missforest"),
+        ("gain", "GAIN + Cox", "Results/final/runs_v2_tesla/gain"),
+        ("mc_dropout_cox", "MC Dropout Cox", "Results/final/runs_v2_tesla/mc_dropout_cox"),
+        ("deephit", "DeepHit", "Results/final/runs_v2_tesla/deephit"),
+    ]
+
+    cohort_map = {
+        "metabric": "METABRIC",
+        "mimic": "MIMIC-IV",
+        "eicu": "eICU",
+    }
+    severities = ["light", "moderate", "severe"]
+
+    rows = []
+    for m_key, m_name, m_rel in method_configs:
+        m_dir = os.path.join(project_root, m_rel)
+        for c_key in ["metabric", "mimic", "eicu"]:
+            c_name = cohort_map[c_key]
+            for s in severities:
+                for f in range(1, 6):
+                    fname = f"{c_key}_{s}_fold{f}_selected.json"
+                    fpath = os.path.join(m_dir, fname)
+                    if os.path.isfile(fpath):
+                        with open(fpath, "r", encoding="utf-8") as fp:
+                            data = json.load(fp)
+                        trial = data.get("selected_trial")
+                        params = data.get("params", {})
+                        for p_name, p_val in params.items():
+                            rows.append([m_name, c_name, s, f, trial, p_name, p_val])
+
+        syn_fname = "synthetic_moderate_fold1_selected.json"
+        syn_fpath = os.path.join(m_dir, syn_fname)
+        if os.path.isfile(syn_fpath):
+            with open(syn_fpath, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            trial = data.get("selected_trial")
+            params = data.get("params", {})
+            for p_name, p_val in params.items():
+                rows.append([m_name, "Synthetic", "moderate", 1, trial, p_name, p_val])
+
+    out_csv = os.path.join(
+        project_root, "sn-article-template", "additional_file_1_selected_hyperparameters.csv"
+    )
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
+    with open(out_csv, "w", newline="", encoding="utf-8") as fp:
+        writer = csv.writer(fp)
+        writer.writerow(
+            ["method", "cohort", "severity", "fold", "selected_trial", "parameter", "value"]
+        )
+        writer.writerows(rows)
+    print(f"Saved selected hyperparameters to {out_csv}")
 
 
 if __name__ == "__main__":
