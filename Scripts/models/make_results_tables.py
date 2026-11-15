@@ -283,7 +283,8 @@ def main():
         "\\centering",
         "\\scriptsize",
         "\\caption{Imputation uncertainty calibration of B-SVAE and of MICE with posterior sampling.}\\label{tab:res_bsvae_uncertainty}",
-        "\\begin{tabular}{llcccccc}",
+        "\\resizebox{\\linewidth}{!}{%",
+        "\\begin{tabular}{@{}llcccccc@{}}",
         "\\toprule",
         " & & \\multicolumn{3}{c}{B-SVAE} & \\multicolumn{3}{c}{MICE, posterior sampling} \\\\",
         "\\cmidrule(lr){3-5} \\cmidrule(lr){6-8}",
@@ -305,7 +306,8 @@ def main():
             t6_lines.append("\\midrule")
     t6_lines.extend([
         "\\bottomrule",
-        "\\end{tabular}",
+        "\\end{tabular}%",
+        "}",
         "\\begin{minipage}{\\linewidth}",
         "\\footnotesize",
         "\\vspace{1mm}",
@@ -335,9 +337,9 @@ def main():
         "iwae",
         iwae_methods,
         bold_criterion=None,
-        extra_caption=" Values are not comparable across models with different observation likelihoods.",
+        extra_caption="",
         decimals=1,
-        notes="In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
+        notes="Values are not comparable across models with different observation likelihoods. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
         placement="[!htbp]",
     )
 
