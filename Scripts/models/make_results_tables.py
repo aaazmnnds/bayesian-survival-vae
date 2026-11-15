@@ -46,7 +46,8 @@ def main():
     ]
 
     all_methods = methods + [
-        ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal")
+        ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal"),
+        ("mice_mi", "MICE, posterior sampling", "Results/final/runs_v2/mice_mi"),
     ]
 
     datasets = [
@@ -97,6 +98,14 @@ def main():
                         test_folds[m_key][d_key][s_key][f] = json.load(fp)
 
     def get_mean_std_val(m_key, d_key, s_key, metric):
+        if m_key in test_folds and d_key in test_folds[m_key] and s_key in test_folds[m_key][d_key]:
+            vals = [
+                test_folds[m_key][d_key][s_key][f]["metrics"][metric]
+                for f in range(1, 6)
+                if metric in test_folds[m_key][d_key][s_key].get(f, {}).get("metrics", {})
+            ]
+            if len(vals) == 5:
+                return float(np.mean(vals)), float(np.std(vals, ddof=1))
         data = summaries[m_key][d_key][s_key]
         if metric in data and isinstance(data[metric], dict):
             m_val = data[metric].get("mean")
@@ -273,10 +282,12 @@ def main():
         "\\begin{table}[h]",
         "\\centering",
         "\\scriptsize",
-        "\\caption{Imputation uncertainty calibration of B-SVAE.}\\label{tab:res_bsvae_uncertainty}",
-        "\\begin{tabular}{llccc}",
+        "\\caption{Imputation uncertainty calibration of B-SVAE and of MICE with posterior sampling.}\\label{tab:res_bsvae_uncertainty}",
+        "\\begin{tabular}{llcccccc}",
         "\\toprule",
-        "Cohort & Severity & PICP & MPIW & ECE \\\\",
+        " & & \\multicolumn{3}{c}{B-SVAE} & \\multicolumn{3}{c}{MICE, posterior sampling} \\\\",
+        "\\cmidrule(lr){3-5} \\cmidrule(lr){6-8}",
+        "Cohort & Severity & PICP & MPIW & ECE & PICP & MPIW & ECE \\\\",
         "\\midrule",
     ]
     for d_key, d_lbl in datasets:
@@ -286,7 +297,10 @@ def main():
             picp_str = fmt_cell("bsvae", d_key, s_key, "picp", is_bold=False)
             mpiw_str = fmt_cell("bsvae", d_key, s_key, "mpiw", is_bold=False)
             ece_str = fmt_cell("bsvae", d_key, s_key, "ece", is_bold=False)
-            t6_lines.append(f"{c_label} & {s_label} & {picp_str} & {mpiw_str} & {ece_str} \\\\")
+            mice_picp = fmt_cell("mice_mi", d_key, s_key, "picp", is_bold=False)
+            mice_mpiw = fmt_cell("mice_mi", d_key, s_key, "mpiw", is_bold=False)
+            mice_ece = fmt_cell("mice_mi", d_key, s_key, "ece", is_bold=False)
+            t6_lines.append(f"{c_label} & {s_label} & {picp_str} & {mpiw_str} & {ece_str} & {mice_picp} & {mice_mpiw} & {mice_ece} \\\\")
         if d_key != datasets[-1][0]:
             t6_lines.append("\\midrule")
     t6_lines.extend([
@@ -295,7 +309,7 @@ def main():
         "\\begin{minipage}{\\linewidth}",
         "\\footnotesize",
         "\\vspace{1mm}",
-        "PICP, prediction interval coverage probability, and MPIW, mean prediction interval width, of the 95\\% predictive intervals; ECE, expected calibration error. All metrics were computed on the masked cells; MPIW on the standardized scale. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds.",
+        "PICP, prediction interval coverage probability, and MPIW, mean prediction interval width, of the 95\\% predictive intervals; ECE, expected calibration error. All metrics were computed on the masked cells; MPIW on the standardized scale. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. MICE, posterior sampling: 20 imputations per fold with the selected MICE configuration; the intervals use the mean and variance of the 20 imputed values.",
         "\\end{minipage}",
         "\\end{table}",
     ])
@@ -515,12 +529,19 @@ def main():
         diff_cindex_methods,
         caption_favors=None,
         is_cindex=True,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Positive values favor B-SVAE. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer.",
+        notes=None,
     )
 
     diff_rmse_methods = comp_rmse_methods + [
         ("bsvae_nolcal", "B-SVAE ($\\lambda = 0$)", "Results/final/runs_v2/bsvae_nolcal")
     ]
+    combined_diff_notes = (
+        "In each cell, the upper value is the mean difference and the lower values in brackets "
+        "denote the 95\\% confidence interval $[lo, hi]$. For C-index, positive values favor B-SVAE; "
+        "for RMSE, negative values favor B-SVAE. Intervals use the corrected resampled $t$ statistic "
+        "and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. "
+        "B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer."
+    )
     t11_rmse, t11_excl, t11_tot = build_difference_table(
         "rmse_std",
         "Difference in imputation RMSE, B-SVAE minus each method, with 95\\% confidence intervals",
@@ -528,15 +549,25 @@ def main():
         diff_rmse_methods,
         caption_favors=None,
         is_cindex=False,
-        notes="In each cell, the upper value is the mean difference and the lower values in brackets denote the 95\\% confidence interval $[lo, hi]$. Negative values favor B-SVAE. Intervals use the corrected resampled $t$ statistic and are not adjusted for multiple comparisons. * indicates the confidence interval excludes 0. B-SVAE ($\\lambda = 0$): B-SVAE without the calibration regularizer.",
+        notes=combined_diff_notes,
     )
 
-    t9_t10_combined = (
-        t9_wins[: t9_wins.rfind("\\end{table}")].rstrip()
-        + "\n\n\\vspace{3mm}\n\n"
-        + t10_cindex[t10_cindex.find("\n") + 1 :]
+    t8_t9_combined = (
+        t8_iwae[: t8_iwae.rfind("\\end{table}")].rstrip()
+        + "\n\n\\vspace{4mm}\n\n"
+        + t9_wins[t9_wins.find("\n") + 1 :]
     )
-    appendix_tables = [t7_mae, t8_iwae, t9_t10_combined, t11_rmse]
+
+    t10_cindex_body = t10_cindex[: t10_cindex.rfind("\\end{table}")].rstrip()
+    t10_cindex_body = t10_cindex_body.replace(
+        "\\begin{table}[!htbp]\n\\centering\n",
+        "\\begin{table}[!htbp]\n\\centering\n\\renewcommand{\\arraystretch}{0.75}\n",
+        1,
+    )
+    t11_rmse_body = t11_rmse[t11_rmse.find("\n") + 1 :]
+    t10_t11_combined = t10_cindex_body + "\n\n\\vspace{1mm}\n\n" + t11_rmse_body
+
+    appendix_tables = [t7_mae, t8_t9_combined, t10_t11_combined]
     appendix_out_path = os.path.join(project_root, "sn-article-template/results_tables_appendix.tex")
     os.makedirs(os.path.dirname(appendix_out_path), exist_ok=True)
     with open(appendix_out_path, "w", encoding="utf-8") as fp:
@@ -691,6 +722,33 @@ def export_selected_hyperparameters(project_root=None):
     }
     severities = ["light", "moderate", "severe"]
 
+    def clean_param_name(m_name, p_name):
+        if p_name in ("latent", "latent_dim"):
+            return "latent dimension"
+        if p_name == "hidden":
+            return "hidden units" if m_name == "MIWAE + Cox" else "hidden layers"
+        if p_name in ("dropout", "dropout_prob"):
+            return "dropout"
+        if p_name == "learning_rate":
+            return "learning rate"
+        if p_name == "l2":
+            return "L2 penalty"
+        if p_name == "max_iter":
+            return "iterations"
+        if p_name == "n_nearest_features":
+            return "nearest features"
+        if p_name == "hint_rate":
+            return "hint rate"
+        return p_name
+
+    def clean_param_value(p_val):
+        s_val = str(p_val)
+        if s_val == "half":
+            return "floor(p/2)"
+        if "_" in s_val and all(part.isdigit() for part in s_val.split("_")):
+            return f"[{','.join(s_val.split('_'))}]"
+        return p_val
+
     rows = []
     for m_key, m_name, m_rel in method_configs:
         m_dir = os.path.join(project_root, m_rel)
@@ -706,7 +764,9 @@ def export_selected_hyperparameters(project_root=None):
                         trial = data.get("selected_trial")
                         params = data.get("params", {})
                         for p_name, p_val in params.items():
-                            rows.append([m_name, c_name, s, f, trial, p_name, p_val])
+                            p_clean = clean_param_name(m_name, p_name)
+                            v_clean = clean_param_value(p_val)
+                            rows.append([m_name, c_name, s, f, trial, p_clean, v_clean])
 
         syn_fname = "synthetic_moderate_fold1_selected.json"
         syn_fpath = os.path.join(m_dir, syn_fname)
@@ -716,7 +776,9 @@ def export_selected_hyperparameters(project_root=None):
             trial = data.get("selected_trial")
             params = data.get("params", {})
             for p_name, p_val in params.items():
-                rows.append([m_name, "Synthetic", "moderate", 1, trial, p_name, p_val])
+                p_clean = clean_param_name(m_name, p_name)
+                v_clean = clean_param_value(p_val)
+                rows.append([m_name, "Synthetic", "moderate", 1, trial, p_clean, v_clean])
 
     out_csv = os.path.join(
         project_root, "sn-article-template", "additional_file_1_selected_hyperparameters.csv"

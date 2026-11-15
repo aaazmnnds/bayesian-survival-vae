@@ -37,12 +37,15 @@ def cox_eta(cox_state, X_imp):
     return eta
 
 class TwoStepCoxPlugin:
-    def __init__(self, method, n_jobs=8):
+    def __init__(self, method, n_jobs=8, mi_draws=None):
         if method not in {'mice', 'missforest'}:
             raise ValueError(f"Unknown method {method}, expected 'mice' or 'missforest'")
+        if mi_draws is not None and method != 'mice':
+            raise ValueError("mi_draws is allowed only for method 'mice'")
         self.method = method
         self.n_jobs = n_jobs
-        self.name = method
+        self.mi_draws = mi_draws
+        self.name = 'mice_mi' if mi_draws is not None else method
         self.directions = ['minimize', 'maximize']
         self.pareto = True
         self._cache = {}
@@ -99,13 +102,30 @@ class TwoStepCoxPlugin:
         
         cox_state = fit_cox(X_imp, train['T'], train['E'], params['penalizer'])
         
-        return {
+        state = {
             'imputer': imputer,
             'cox_state': cox_state,
             'cox_model': cox_state['cox_model'],
             'cols': cox_state['cols'],
             'names': cox_state['names']
         }
+        if self.mi_draws is not None:
+            _st = np.random.get_state()
+            mi_imputers = []
+            for k in range(1, self.mi_draws + 1):
+                imp = IterativeImputer(
+                    estimator=BayesianRidge(),
+                    max_iter=params['max_iter'],
+                    n_nearest_features=n_nf,
+                    sample_posterior=True,
+                    random_state=seed + k
+                )
+                imp.fit(train['X_obs'])
+                mi_imputers.append(imp)
+            np.random.set_state(_st)
+            state['mi_imputers'] = mi_imputers
+
+        return state
 
     def predict(self, state, part, n_passes):
         X_obs = part['X_obs']
@@ -115,6 +135,26 @@ class TwoStepCoxPlugin:
         
         cox_state = state.get('cox_state', state)
         eta = cox_eta(cox_state, mu)
+
+        if self.mi_draws is not None and 'mi_imputers' in state:
+            _st = np.random.get_state()
+            draws = []
+            for imp in state['mi_imputers']:
+                draw = imp.transform(X_obs)
+                draw[observed_mask] = X_obs[observed_mask]
+                draws.append(draw)
+            draws = np.stack(draws, axis=0)
+            mu_mi = np.mean(draws, axis=0)
+            sigma_E2 = np.var(draws, axis=0, ddof=1)
+            sigma_A2 = np.zeros_like(sigma_E2)
+            np.random.set_state(_st)
+            return {
+                'mu': mu_mi,
+                'eta': eta,
+                'sigma_E2': sigma_E2,
+                'sigma_A2': sigma_A2
+            }
+
         return {'mu': mu, 'eta': eta}
 
     def objectives(self, pred_val, val):
