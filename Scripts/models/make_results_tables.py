@@ -793,10 +793,20 @@ def main():
         notes=combined_diff_notes,
     )
 
-    t8_t9_combined = (
-        t8_iwae[: t8_iwae.rfind("\\end{table}")].rstrip()
-        + "\n\n\\vspace{4mm}\n\n"
-        + t9_wins[t9_wins.find("\n") + 1 :]
+    t7_mae_body = t7_mae[: t7_mae.rfind("\\end{table}")].rstrip()
+    t7_mae_body = t7_mae_body.replace(
+        "\\begin{table}[!htbp]\n\\centering\n",
+        "\\begin{table}[!htbp]\n\\centering\n\\renewcommand{\\arraystretch}{0.92}\n",
+        1,
+    )
+    t8_iwae_body = t8_iwae[t8_iwae.find("\n") + 1 : t8_iwae.rfind("\\end{table}")].rstrip()
+    t9_wins_body = t9_wins[t9_wins.find("\n") + 1 :]
+    t7_t8_t9_combined = (
+        t7_mae_body
+        + "\n\n\\vspace{2.5mm}\n\n"
+        + t8_iwae_body
+        + "\n\n\\vspace{2.5mm}\n\n"
+        + t9_wins_body
     )
 
     t10_cindex_body = t10_cindex[: t10_cindex.rfind("\\end{table}")].rstrip()
@@ -808,7 +818,7 @@ def main():
     t11_rmse_body = t11_rmse[t11_rmse.find("\n") + 1 :]
     t10_t11_combined = t10_cindex_body + "\n\n\\vspace{1mm}\n\n" + t11_rmse_body
 
-    appendix_tables = [t7_mae, t8_t9_combined, t10_t11_combined]
+    appendix_tables = [t7_t8_t9_combined, t10_t11_combined]
     appendix_out_path = os.path.join(project_root, "sn-article-template/results_tables_appendix.tex")
     os.makedirs(os.path.dirname(appendix_out_path), exist_ok=True)
     with open(appendix_out_path, "w", encoding="utf-8") as fp:
