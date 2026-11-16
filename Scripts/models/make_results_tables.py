@@ -1,12 +1,186 @@
 import argparse
+import contextlib
 import csv
 import json
 import os
+import re
 import sys
+from collections import defaultdict
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
+def run_ipcw(project_root):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    import harness_data
+    import harness_metrics
+
+    search_dirs = [
+        os.path.join(project_root, "Results", "final", "runs_v2"),
+        os.path.join(project_root, "Results", "final", "runs_v2_tesla"),
+    ]
+
+    target_folders = []
+    for base_dir in search_dirs:
+        if not os.path.isdir(base_dir):
+            continue
+        for entry in sorted(os.listdir(base_dir)):
+            sub_dir = os.path.join(base_dir, entry)
+            if os.path.isdir(sub_dir):
+                npz_files = [f for f in os.listdir(sub_dir) if f.endswith("_test.npz")]
+                if npz_files:
+                    target_folders.append((entry, sub_dir))
+
+    pattern = re.compile(r"^(.+)_([^_]+)_fold(\d+)_test\.npz$")
+
+    rows = []
+    n_processed = 0
+    n_skipped = 0
+    max_check_auc_diff = 0.0
+    max_check_cindex_diff = 0.0
+
+    for method_folder, folder_path in target_folders:
+        filenames = sorted(os.listdir(folder_path))
+        for fname in filenames:
+            m = pattern.match(fname)
+            if not m:
+                continue
+
+            dataset = m.group(1)
+            scenario = m.group(2)
+            k = int(m.group(3))
+
+            npz_path = os.path.join(folder_path, fname)
+            try:
+                npz = np.load(npz_path)
+            except Exception:
+                n_skipped += 1
+                continue
+
+            if "cohort_index" not in npz or "eta" not in npz or "time_grid" not in npz:
+                n_skipped += 1
+                continue
+
+            try:
+                with open(os.devnull, "w") as devnull:
+                    with contextlib.redirect_stdout(devnull):
+                        fd = harness_data.load_fold(dataset, scenario, k)
+                        tr = fd.part("train")
+                        te = harness_data.load_test(dataset, scenario, k, fd).part("test")
+            except Exception:
+                n_skipped += 1
+                continue
+
+            if not np.array_equal(te["cohort_index"], npz["cohort_index"]):
+                n_skipped += 1
+                continue
+
+            eta = npz["eta"]
+            times = npz["time_grid"]
+
+            # Checks against stored values
+            auc_res = harness_metrics.td_auc_unweighted(te["T"], te["E"], eta, times)
+            mean_calc_auc = (
+                float(auc_res[1]) if isinstance(auc_res, tuple) else float(np.mean(auc_res))
+            )
+            if "td_auc" in npz:
+                mean_stored_auc = float(np.mean(npz["td_auc"]))
+                check_auc_diff = abs(mean_calc_auc - mean_stored_auc)
+            else:
+                check_auc_diff = 0.0
+
+            calc_cindex = float(harness_metrics.cindex(te["T"], te["E"], eta))
+            json_fname = f"{dataset}_{scenario}_fold{k}_test.json"
+            json_path = os.path.join(folder_path, json_fname)
+            check_cindex_diff = 0.0
+            if os.path.isfile(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as jf:
+                        test_json = json.load(jf)
+                    stored_cindex = test_json.get("metrics", {}).get(
+                        "cindex", test_json.get("cindex")
+                    )
+                    if stored_cindex is not None:
+                        check_cindex_diff = abs(calc_cindex - float(stored_cindex))
+                except Exception:
+                    pass
+
+            # New metrics
+            auc_arr, auc_ipcw, n_dropped = harness_metrics.td_auc_ipcw(
+                tr["T"], tr["E"], te["T"], te["E"], eta, times
+            )
+            tau = float(np.max(times))
+            uno_c = harness_metrics.cindex_uno(
+                tr["T"], tr["E"], te["T"], te["E"], eta, tau=tau
+            )
+
+            row = {
+                "method_folder": method_folder,
+                "dataset": dataset,
+                "scenario": scenario,
+                "fold": k,
+                "auc_ipcw": float(auc_ipcw) if not np.isnan(auc_ipcw) else None,
+                "uno_c": float(uno_c) if not np.isnan(uno_c) else None,
+                "n_times_dropped": int(n_dropped),
+                "check_auc_diff": float(check_auc_diff),
+                "check_cindex_diff": float(check_cindex_diff),
+            }
+            rows.append(row)
+            n_processed += 1
+            max_check_auc_diff = max(max_check_auc_diff, check_auc_diff)
+            max_check_cindex_diff = max(max_check_cindex_diff, check_cindex_diff)
+
+    out_json = os.path.join(project_root, "Results", "final", "ipcw_metrics.json")
+    os.makedirs(os.path.dirname(out_json), exist_ok=True)
+    with open(out_json, "w", encoding="utf-8") as fp:
+        json.dump(rows, fp, indent=2)
+
+    # Print required outputs
+    print(f"Files processed: {n_processed}, skipped: {n_skipped}")
+    print(
+        f"Maximum check_auc_diff: {max_check_auc_diff:.6e}, maximum check_cindex_diff: {max_check_cindex_diff:.6e}"
+    )
+    print()
+
+    groups = defaultdict(lambda: {"auc": [], "uno": []})
+    for r in rows:
+        key = (r["method_folder"], r["dataset"], r["scenario"])
+        if r["auc_ipcw"] is not None:
+            groups[key]["auc"].append(r["auc_ipcw"])
+        if r["uno_c"] is not None:
+            groups[key]["uno"].append(r["uno_c"])
+
+    def sort_key(key_tuple):
+        m, d, s = key_tuple
+        d_order = {"metabric": 0, "mimic": 1, "eicu": 2}.get(d.lower(), 9)
+        s_order = {"light": 0, "moderate": 1, "severe": 2}.get(s.lower(), 9)
+        return (m, d_order, s_order)
+
+    header = f"{'Method Folder':<20} | {'Dataset':<10} | {'Scenario':<10} | {'IPCW TD-AUC (SD)':<22} | {'Uno C-index (SD)':<22}"
+    separator = "-" * len(header)
+    print(header)
+    print(separator)
+
+    for key in sorted(groups.keys(), key=sort_key):
+        m_folder, d_set, scen = key
+        aucs = groups[key]["auc"]
+        unos = groups[key]["uno"]
+
+        auc_str = (
+            f"{np.mean(aucs):.4f} ({np.std(aucs, ddof=1 if len(aucs) > 1 else 0):.4f})"
+            if len(aucs) > 0
+            else "N/A"
+        )
+        uno_str = (
+            f"{np.mean(unos):.4f} ({np.std(unos, ddof=1 if len(unos) > 1 else 0):.4f})"
+            if len(unos) > 0
+            else "N/A"
+        )
+        print(f"{m_folder:<20} | {d_set:<10} | {scen:<10} | {auc_str:<22} | {uno_str:<22}")
 
 
 def main():
@@ -16,10 +190,19 @@ def main():
         default="sn-article-template/results_tables.tex",
         help="Output path for LaTeX tables relative to project root.",
     )
+    parser.add_argument(
+        "--ipcw",
+        action="store_true",
+        help="Compute IPCW metrics and exit.",
+    )
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    if args.ipcw:
+        run_ipcw(project_root)
+        sys.exit(0)
 
     methods = [
         ("bsvae", "B-SVAE", "Results/final/runs_v2/bsvae"),
@@ -97,7 +280,63 @@ def main():
                     with open(fold_path, "r", encoding="utf-8") as fp:
                         test_folds[m_key][d_key][s_key][f] = json.load(fp)
 
+    ipcw_path = os.path.join(project_root, "Results", "final", "ipcw_metrics.json")
+    if not os.path.isfile(ipcw_path):
+        sys.exit(f"Error: {ipcw_path} not found.")
+
+    with open(ipcw_path, "r", encoding="utf-8") as fp:
+        ipcw_data = json.load(fp)
+
+    ipcw_lookup = {}
+    for entry in ipcw_data:
+        mf = entry.get("method_folder", "")
+        ds = entry.get("dataset", "")
+        sc = entry.get("scenario", "")
+        fd = entry.get("fold", 0)
+        val = entry.get("auc_ipcw")
+        if val is not None and not (isinstance(val, float) and np.isnan(val)):
+            ipcw_lookup[(mf, ds, sc, int(fd))] = float(val)
+            ipcw_lookup[(os.path.basename(mf), ds, sc, int(fd))] = float(val)
+            ipcw_lookup[(mf.lower(), ds.lower(), sc.lower(), int(fd))] = float(val)
+            ipcw_lookup[(os.path.basename(mf).lower(), ds.lower(), sc.lower(), int(fd))] = float(val)
+
+    for m_key, _, m_rel in all_methods:
+        m_folder = os.path.basename(m_rel)
+        for d_key, _ in datasets:
+            for s_key in scenarios:
+                for f in range(1, 6):
+                    val = ipcw_lookup.get((m_folder, d_key, s_key, f))
+                    if val is None:
+                        val = ipcw_lookup.get((m_folder.lower(), d_key.lower(), s_key.lower(), f))
+                    if val is not None:
+                        if (
+                            m_key in test_folds
+                            and d_key in test_folds[m_key]
+                            and s_key in test_folds[m_key][d_key]
+                            and f in test_folds[m_key][d_key][s_key]
+                        ):
+                            metrics_dict = test_folds[m_key][d_key][s_key][f].setdefault("metrics", {})
+                            metrics_dict["td_auc_mean"] = val
+                            metrics_dict["td_auc"] = val
+
+    method_to_folder = {m[0]: os.path.basename(m[2]) for m in all_methods}
+
     def get_mean_std_val(m_key, d_key, s_key, metric):
+        if metric in ("td_auc_mean", "td_auc"):
+            m_folder = method_to_folder.get(m_key, m_key)
+            vals = []
+            for f in range(1, 6):
+                val = ipcw_lookup.get((m_folder, d_key, s_key, f))
+                if val is None:
+                    val = ipcw_lookup.get((m_folder.lower(), d_key.lower(), s_key.lower(), f))
+                if val is None:
+                    sys.exit(
+                        f"Error: fold {m_folder}_{d_key}_{s_key}_fold{f} needed by table has no auc_ipcw value in ipcw_metrics.json"
+                    )
+                vals.append(float(val))
+            if len(vals) == 5:
+                return float(np.mean(vals)), float(np.std(vals, ddof=1))
+
         if m_key in test_folds and d_key in test_folds[m_key] and s_key in test_folds[m_key][d_key]:
             vals = [
                 test_folds[m_key][d_key][s_key][f]["metrics"][metric]

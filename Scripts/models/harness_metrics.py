@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.stats as stats
-from sksurv.metrics import integrated_brier_score
+from sksurv.metrics import integrated_brier_score, cumulative_dynamic_auc, concordance_index_ipcw
+from sksurv.nonparametric import kaplan_meier_estimator
 
 def rmse(x_true, mu, M_inj):
     mask = M_inj == 1
@@ -209,3 +210,73 @@ def interval_coverage(S_true, S_lower, S_upper):
     per_time = np.mean(in_interval, axis=0)
     overall = np.mean(in_interval)
     return per_time, overall
+
+
+def td_auc_ipcw(T_train, E_train, T_test, E_test, eta, times):
+    dt = np.dtype([('event', bool), ('time', float)])
+    train = np.empty(len(T_train), dtype=dt)
+    train['event'] = E_train.astype(bool)
+    train['time'] = T_train
+
+    # clipping above the largest grid time does not change the estimates.
+    T_test_c = np.minimum(T_test, np.nextafter(np.max(T_train), 0))
+    test = np.empty(len(T_test), dtype=dt)
+    test['event'] = E_test.astype(bool)
+    test['time'] = T_test_c
+
+    times = np.asarray(times)
+    t_min = np.min(T_test)
+    t_max = np.max(T_test)
+
+    censored = (E_train == 0)
+    if not np.any(censored):
+        g_times = np.ones(len(times), dtype=float)
+    else:
+        try:
+            km_times, km_surv = kaplan_meier_estimator(censored, T_train)
+            idx = np.searchsorted(km_times, times, side='right') - 1
+            g_times = np.ones(len(times), dtype=float)
+            valid = idx >= 0
+            g_times[valid] = km_surv[idx[valid]]
+        except Exception:
+            order = np.argsort(T_train)
+            t_sorted = T_train[order]
+            c_sorted = censored[order].astype(float)
+            unique_t = np.unique(t_sorted)
+            d_c = np.zeros_like(unique_t, dtype=float)
+            t_idx = np.searchsorted(unique_t, t_sorted)
+            np.add.at(d_c, t_idx, c_sorted)
+            n_at_risk = len(T_train) - np.searchsorted(t_sorted, unique_t)
+            prob_step = 1.0 - (d_c / n_at_risk)
+            cum_g = np.cumprod(prob_step)
+            idx = np.searchsorted(unique_t, times, side='right') - 1
+            g_times = np.ones(len(times), dtype=float)
+            valid = idx >= 0
+            g_times[valid] = cum_g[idx[valid]]
+
+    mask = (times >= t_min) & (times < t_max) & (times < np.max(T_train)) & (g_times > 0)
+    kept_times = times[mask]
+    n_dropped = int(len(times) - len(kept_times))
+
+    if len(kept_times) == 0:
+        return np.array([]), np.nan, n_dropped
+
+    auc_array, _ = cumulative_dynamic_auc(train, test, eta, kept_times)
+    return auc_array, float(np.mean(auc_array)), n_dropped
+
+
+def cindex_uno(T_train, E_train, T_test, E_test, eta, tau):
+    dt = np.dtype([('event', bool), ('time', float)])
+    train = np.empty(len(T_train), dtype=dt)
+    train['event'] = E_train.astype(bool)
+    train['time'] = T_train
+
+    # clipping above the largest grid time does not change the estimates.
+    T_test_c = np.minimum(T_test, np.nextafter(np.max(T_train), 0))
+    test = np.empty(len(T_test), dtype=dt)
+    test['event'] = E_test.astype(bool)
+    test['time'] = T_test_c
+
+    result = concordance_index_ipcw(train, test, eta, tau=tau)
+    return result[0]
+
