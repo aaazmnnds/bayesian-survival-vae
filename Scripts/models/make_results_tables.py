@@ -288,6 +288,7 @@ def main():
         ipcw_data = json.load(fp)
 
     ipcw_lookup = {}
+    ipcw_uno_lookup = {}
     for entry in ipcw_data:
         mf = entry.get("method_folder", "")
         ds = entry.get("dataset", "")
@@ -299,6 +300,12 @@ def main():
             ipcw_lookup[(os.path.basename(mf), ds, sc, int(fd))] = float(val)
             ipcw_lookup[(mf.lower(), ds.lower(), sc.lower(), int(fd))] = float(val)
             ipcw_lookup[(os.path.basename(mf).lower(), ds.lower(), sc.lower(), int(fd))] = float(val)
+        val_uno = entry.get("uno_c")
+        if val_uno is not None and not (isinstance(val_uno, float) and np.isnan(val_uno)):
+            ipcw_uno_lookup[(mf, ds, sc, int(fd))] = float(val_uno)
+            ipcw_uno_lookup[(os.path.basename(mf), ds, sc, int(fd))] = float(val_uno)
+            ipcw_uno_lookup[(mf.lower(), ds.lower(), sc.lower(), int(fd))] = float(val_uno)
+            ipcw_uno_lookup[(os.path.basename(mf).lower(), ds.lower(), sc.lower(), int(fd))] = float(val_uno)
 
     for m_key, _, m_rel in all_methods:
         m_folder = os.path.basename(m_rel)
@@ -318,6 +325,18 @@ def main():
                             metrics_dict = test_folds[m_key][d_key][s_key][f].setdefault("metrics", {})
                             metrics_dict["td_auc_mean"] = val
                             metrics_dict["td_auc"] = val
+                    val_uno = ipcw_uno_lookup.get((m_folder, d_key, s_key, f))
+                    if val_uno is None:
+                        val_uno = ipcw_uno_lookup.get((m_folder.lower(), d_key.lower(), s_key.lower(), f))
+                    if val_uno is not None:
+                        if (
+                            m_key in test_folds
+                            and d_key in test_folds[m_key]
+                            and s_key in test_folds[m_key][d_key]
+                            and f in test_folds[m_key][d_key][s_key]
+                        ):
+                            metrics_dict = test_folds[m_key][d_key][s_key][f].setdefault("metrics", {})
+                            metrics_dict["uno_c"] = val_uno
 
     method_to_folder = {m[0]: os.path.basename(m[2]) for m in all_methods}
 
@@ -332,6 +351,21 @@ def main():
                 if val is None:
                     sys.exit(
                         f"Error: fold {m_folder}_{d_key}_{s_key}_fold{f} needed by table has no auc_ipcw value in ipcw_metrics.json"
+                    )
+                vals.append(float(val))
+            if len(vals) == 5:
+                return float(np.mean(vals)), float(np.std(vals, ddof=1))
+
+        if metric == "uno_c":
+            m_folder = method_to_folder.get(m_key, m_key)
+            vals = []
+            for f in range(1, 6):
+                val = ipcw_uno_lookup.get((m_folder, d_key, s_key, f))
+                if val is None:
+                    val = ipcw_uno_lookup.get((m_folder.lower(), d_key.lower(), s_key.lower(), f))
+                if val is None:
+                    sys.exit(
+                        f"Error: fold {m_folder}_{d_key}_{s_key}_fold{f} needed by table has no uno_c value in ipcw_metrics.json"
                     )
                 vals.append(float(val))
             if len(vals) == 5:
@@ -392,27 +426,12 @@ def main():
         tabcolsep="2pt",
         notes=None,
         placement="[h]",
+        blocks=None,
     ):
         cols = []
         for d_key, _ in datasets:
             for s_key in scenarios:
                 cols.append((d_key, s_key))
-
-        best_per_col = {}
-        for d_key, s_key in cols:
-            vals = []
-            for m in method_subset:
-                m_key = m[0]
-                m_val, _ = get_mean_std_val(m_key, d_key, s_key, metric_key)
-                if m_val is not None:
-                    vals.append(round(m_val, decimals))
-            if vals and bold_criterion is not None:
-                if bold_criterion == "min":
-                    best_per_col[(d_key, s_key)] = min(vals)
-                elif bold_criterion == "max":
-                    best_per_col[(d_key, s_key)] = max(vals)
-            else:
-                best_per_col[(d_key, s_key)] = None
 
         lines = [
             f"\\begin{{table}}{placement}",
@@ -428,32 +447,57 @@ def main():
             "\\midrule",
         ]
 
-        for m in method_subset:
-            m_key = m[0]
-            m_lbl = m[1]
-            row_cells = [m_lbl]
+        if blocks is None:
+            blocks = [(None, metric_key)]
+
+        for b_idx, (block_title, b_metric_key) in enumerate(blocks):
+            if b_idx > 0:
+                lines.append("\\midrule")
+            if block_title:
+                lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{{block_title}}}}} \\\\")
+
+            best_per_col = {}
             for d_key, s_key in cols:
-                m_val, s_val = get_mean_std_val(m_key, d_key, s_key, metric_key)
-                is_best = False
-                best_val = best_per_col.get((d_key, s_key))
-                if best_val is not None and m_val is not None:
-                    if abs(round(m_val, decimals) - best_val) < 1e-12:
-                        is_best = True
+                vals = []
+                for m in method_subset:
+                    m_key = m[0]
+                    m_val, _ = get_mean_std_val(m_key, d_key, s_key, b_metric_key)
+                    if m_val is not None:
+                        vals.append(round(m_val, decimals))
+                if vals and bold_criterion is not None:
+                    if bold_criterion == "min":
+                        best_per_col[(d_key, s_key)] = min(vals)
+                    elif bold_criterion == "max":
+                        best_per_col[(d_key, s_key)] = max(vals)
+                else:
+                    best_per_col[(d_key, s_key)] = None
 
-                count_lt = None
-                if append_lt_005:
-                    count_lt = 0
-                    for f in range(1, 6):
-                        f_m = test_folds[m_key][d_key][s_key][f].get("metrics", {})
-                        val = f_m.get(metric_key)
-                        if val is not None and float(val) < 0.05:
-                            count_lt += 1
+            for m in method_subset:
+                m_key = m[0]
+                m_lbl = m[1]
+                row_cells = [m_lbl]
+                for d_key, s_key in cols:
+                    m_val, s_val = get_mean_std_val(m_key, d_key, s_key, b_metric_key)
+                    is_best = False
+                    best_val = best_per_col.get((d_key, s_key))
+                    if best_val is not None and m_val is not None:
+                        if abs(round(m_val, decimals) - best_val) < 1e-12:
+                            is_best = True
 
-                cell_str = fmt_cell_makecell(
-                    m_val, s_val, is_bold=is_best, count_lt=count_lt, decimals=decimals
-                )
-                row_cells.append(cell_str)
-            lines.append(" & ".join(row_cells) + " \\\\")
+                    count_lt = None
+                    if append_lt_005:
+                        count_lt = 0
+                        for f in range(1, 6):
+                            f_m = test_folds[m_key][d_key][s_key][f].get("metrics", {})
+                            val = f_m.get(b_metric_key)
+                            if val is not None and float(val) < 0.05:
+                                count_lt += 1
+
+                    cell_str = fmt_cell_makecell(
+                        m_val, s_val, is_bold=is_best, count_lt=count_lt, decimals=decimals
+                    )
+                    row_cells.append(cell_str)
+                lines.append(" & ".join(row_cells) + " \\\\")
 
         lines.extend([
             "\\bottomrule",
@@ -480,12 +524,13 @@ def main():
     )
     t2_cindex = build_transposed_comparison_table(
         "cindex",
-        "Concordance index (C-index).",
+        "Concordance index: Harrell's C and Uno's C.",
         "cindex",
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
-        notes="Harrell's C-index on the test partition. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column.",
+        notes="Harrell's C-index on the test partition. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column. Uno's C was truncated at the end of the evaluation grid (Appendix~\\ref{app:metrics}). Bold marks the highest mean in each column within each block. In MIMIC-IV and eICU, all censoring occurred at day 28, after the end of the evaluation grid, so the censoring weights equaled 1 and the two blocks agree to three decimals.",
+        blocks=[("Harrell's C", "cindex"), ("Uno's C", "uno_c")],
     )
     t3_ibs = build_transposed_comparison_table(
         "ibs",
@@ -498,7 +543,7 @@ def main():
     )
     t4_tdauc = build_transposed_comparison_table(
         "td_auc_mean",
-        "Time-dependent AUC.",
+        "Time-dependent AUC with inverse probability of censoring weights.",
         "td_auc",
         methods,
         bold_criterion="max",
