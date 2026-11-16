@@ -529,7 +529,7 @@ def main():
         methods,
         bold_criterion="max",
         tabcolsep="1.4pt",
-        notes="Harrell's C-index on the test partition. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column. Uno's C was truncated at the end of the evaluation grid (Appendix~\\ref{app:metrics}). Bold marks the highest mean in each column within each block. In MIMIC-IV and eICU, all censoring occurred at day 28, after the end of the evaluation grid, so the censoring weights equaled 1 and the two blocks agree to three decimals.",
+        notes="Harrell's C and Uno's C on the test partition. In each cell, the upper value is the mean and the lower value in parentheses is the standard deviation over five test folds. Bold: highest mean in each column within each block. Uno's C was truncated at the end of the evaluation grid (Appendix~\\ref{app:metrics}). In MIMIC-IV and eICU, all censoring occurred at day 28, after the end of the evaluation grid, so the censoring weights equaled 1 and the two blocks agree to three decimals.",
         blocks=[("Harrell's C", "cindex"), ("Uno's C", "uno_c")],
     )
     t3_ibs = build_transposed_comparison_table(
