@@ -37,15 +37,23 @@ def cox_eta(cox_state, X_imp):
     return eta
 
 class TwoStepCoxPlugin:
-    def __init__(self, method, n_jobs=8, mi_draws=None):
+    def __init__(self, method, n_jobs=8, mi_draws=None, add_indicators=False):
         if method not in {'mice', 'missforest'}:
             raise ValueError(f"Unknown method {method}, expected 'mice' or 'missforest'")
         if mi_draws is not None and method != 'mice':
             raise ValueError("mi_draws is allowed only for method 'mice'")
+        if add_indicators and method != 'mice':
+            raise ValueError("add_indicators is allowed only for method 'mice'")
         self.method = method
         self.n_jobs = n_jobs
         self.mi_draws = mi_draws
-        self.name = 'mice_mi' if mi_draws is not None else method
+        self.add_indicators = add_indicators
+        if add_indicators:
+            self.name = 'mice_ind'
+        elif mi_draws is not None:
+            self.name = 'mice_mi'
+        else:
+            self.name = method
         self.directions = ['minimize', 'maximize']
         self.pareto = True
         self._cache = {}
@@ -65,14 +73,20 @@ class TwoStepCoxPlugin:
     def fit(self, train, val, params, seed):
         if self.method == 'mice':
             n_nf = None if params['n_nearest_features'] == 'all' else params['n_nearest_features']
-            imputer = IterativeImputer(
-                estimator=BayesianRidge(),
-                max_iter=params['max_iter'],
-                n_nearest_features=n_nf,
-                random_state=seed
-            )
-            imputer.fit(train['X_obs'])
-            X_imp = imputer.transform(train['X_obs'])
+            cache_key = ('mice', hashlib.sha1(train['X_obs'].tobytes()).hexdigest(), params['max_iter'], str(n_nf), seed)
+            if self.add_indicators and cache_key in self._cache:
+                imputer, X_imp = self._cache[cache_key]
+            else:
+                imputer = IterativeImputer(
+                    estimator=BayesianRidge(),
+                    max_iter=params['max_iter'],
+                    n_nearest_features=n_nf,
+                    random_state=seed
+                )
+                imputer.fit(train['X_obs'])
+                X_imp = imputer.transform(train['X_obs'])
+                if self.add_indicators:
+                    self._cache[cache_key] = (imputer, X_imp)
         elif self.method == 'missforest':
             cache_key = (hashlib.sha1(train['X_obs'].tobytes()).hexdigest(), seed)
             if cache_key in self._cache:
@@ -100,7 +114,13 @@ class TwoStepCoxPlugin:
                 X_imp = imputer.transform(train['X_obs'])
                 self._cache[cache_key] = (imputer, X_imp)
         
-        cox_state = fit_cox(X_imp, train['T'], train['E'], params['penalizer'])
+        if self.add_indicators:
+            I = np.isnan(train['X_obs']).astype(float)
+            kept_indicator_cols = np.where(I.std(axis=0) > 1e-8)[0]
+            X_cox = np.hstack([X_imp, I[:, kept_indicator_cols]])
+            cox_state = fit_cox(X_cox, train['T'], train['E'], params['penalizer'])
+        else:
+            cox_state = fit_cox(X_imp, train['T'], train['E'], params['penalizer'])
         
         state = {
             'imputer': imputer,
@@ -109,6 +129,8 @@ class TwoStepCoxPlugin:
             'cols': cox_state['cols'],
             'names': cox_state['names']
         }
+        if self.add_indicators:
+            state['indicator_cols'] = kept_indicator_cols
         if self.mi_draws is not None:
             _st = np.random.get_state()
             mi_imputers = []
@@ -134,7 +156,13 @@ class TwoStepCoxPlugin:
         mu[observed_mask] = X_obs[observed_mask]
         
         cox_state = state.get('cox_state', state)
-        eta = cox_eta(cox_state, mu)
+        if self.add_indicators:
+            I_part = np.isnan(X_obs).astype(float)
+            I_kept = I_part[:, state['indicator_cols']]
+            X_cox = np.hstack([mu, I_kept])
+            eta = cox_eta(cox_state, X_cox)
+        else:
+            eta = cox_eta(cox_state, mu)
 
         if self.mi_draws is not None and 'mi_imputers' in state:
             _st = np.random.get_state()
@@ -171,9 +199,10 @@ if __name__ == '__main__':
     parser.add_argument('--trials', type=int, required=True)
     parser.add_argument('--seed', type=int, required=True)
     parser.add_argument('--n_jobs', type=int, default=8)
+    parser.add_argument('--indicators', action='store_true', default=False)
     args = parser.parse_args()
 
-    plugin = TwoStepCoxPlugin(args.method, n_jobs=args.n_jobs)
+    plugin = TwoStepCoxPlugin(args.method, n_jobs=args.n_jobs, add_indicators=args.indicators)
 
     if args.fold == 'all':
         folds = [1, 2, 3, 4, 5]
